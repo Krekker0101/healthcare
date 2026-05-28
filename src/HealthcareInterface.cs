@@ -1022,6 +1022,9 @@ internal sealed class MainForm : GlassForm
     private readonly Dictionary<string, GlassButton> navButtons = new Dictionary<string, GlassButton>();
     private readonly TableLayoutPanel navLayout;
     private readonly FlowLayoutPanel manualBar;
+    private readonly GlassPanel contentPanel;
+    private readonly TableLayoutPanel homeLayout;
+    private Form activeEmbeddedForm;
 
     public MainForm(string dbPath)
         : base(new DbContext(dbPath))
@@ -1045,11 +1048,11 @@ internal sealed class MainForm : GlassForm
         sidebar.Margin = Padding.Empty;
         root.Controls.Add(sidebar, 0, 0);
 
-        GlassPanel content = new GlassPanel();
-        content.Dock = DockStyle.Fill;
-        content.Padding = new Padding(24);
-        content.Margin = Padding.Empty;
-        root.Controls.Add(content, 1, 0);
+        contentPanel = new GlassPanel();
+        contentPanel.Dock = DockStyle.Fill;
+        contentPanel.Padding = new Padding(24);
+        contentPanel.Margin = Padding.Empty;
+        root.Controls.Add(contentPanel, 1, 0);
 
         TableLayoutPanel sidebarLayout = new TableLayoutPanel();
         sidebarLayout.Dock = DockStyle.Fill;
@@ -1118,36 +1121,36 @@ internal sealed class MainForm : GlassForm
         close.Click += delegate { Close(); };
         sidebarActions.Controls.Add(close, 0, 1);
 
-        TableLayoutPanel contentLayout = new TableLayoutPanel();
-        contentLayout.Dock = DockStyle.Fill;
-        contentLayout.BackColor = Color.Transparent;
-        contentLayout.ColumnCount = 1;
-        contentLayout.RowCount = 5;
-        contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        content.Controls.Add(contentLayout);
+        homeLayout = new TableLayoutPanel();
+        homeLayout.Dock = DockStyle.Fill;
+        homeLayout.BackColor = Color.Transparent;
+        homeLayout.ColumnCount = 1;
+        homeLayout.RowCount = 5;
+        homeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        contentPanel.Controls.Add(homeLayout);
 
         sectionTitle = Theme.Label("Панель управления", Theme.H2Font, Theme.Ink);
         sectionTitle.Margin = new Padding(0, 0, 0, 6);
-        contentLayout.Controls.Add(sectionTitle, 0, 0);
+        homeLayout.Controls.Add(sectionTitle, 0, 0);
 
         sectionHint = Theme.Label("Современное левое меню, быстрые действия и аккуратные уведомления для всех важных событий.", Theme.BaseFont, Theme.Muted);
         sectionHint.Margin = new Padding(0, 0, 0, 10);
         sectionHint.MaximumSize = new Size(760, 0);
-        contentLayout.Controls.Add(sectionHint, 0, 1);
+        homeLayout.Controls.Add(sectionHint, 0, 1);
 
         stats = Theme.Label("", new Font("Segoe UI Semibold", 11f, FontStyle.Bold), Theme.Blue);
         stats.Margin = new Padding(0, 0, 0, 16);
-        contentLayout.Controls.Add(stats, 0, 2);
+        homeLayout.Controls.Add(stats, 0, 2);
 
         Panel spacer = new Panel();
         spacer.Dock = DockStyle.Fill;
         spacer.BackColor = Color.Transparent;
-        contentLayout.Controls.Add(spacer, 0, 3);
+        homeLayout.Controls.Add(spacer, 0, 3);
 
         manualBar = new FlowLayoutPanel();
         manualBar.Dock = DockStyle.Fill;
@@ -1156,7 +1159,7 @@ internal sealed class MainForm : GlassForm
         manualBar.FlowDirection = FlowDirection.LeftToRight;
         manualBar.WrapContents = false;
         manualBar.Padding = new Padding(0, 12, 0, 0);
-        contentLayout.Controls.Add(manualBar, 0, 4);
+        homeLayout.Controls.Add(manualBar, 0, 4);
 
         Button manualPdf = new GlassButton();
         manualPdf.Text = "Открыть PDF";
@@ -1182,28 +1185,25 @@ internal sealed class MainForm : GlassForm
         AddNavButton("Пенсионеры", "Карточки, фильтры, поиск", delegate
         {
             SetActiveSection("Пенсионеры", "Добавляйте, ищите и удаляйте записи пенсионеров в одном месте.");
-            new PensionersForm(Db).ShowDialog(this);
-            RefreshStats();
+            ShowEmbeddedForm(new PensionersForm(Db));
         });
 
         AddNavButton("Журнал путевок", "Выдача, статусы, печать", delegate
         {
             SetActiveSection("Журнал путевок", "Работайте с путевками, просматривайте историю и формируйте отчеты.");
-            new VouchersForm(Db).ShowDialog(this);
-            RefreshStats();
+            ShowEmbeddedForm(new VouchersForm(Db));
         });
 
         AddNavButton("Санатории", "Профили, регионы, коечный фонд", delegate
         {
             SetActiveSection("Санатории", "Содержите справочник санаториев и их параметры.");
-            new SanatoriumsForm(Db).ShowDialog(this);
+            ShowEmbeddedForm(new SanatoriumsForm(Db));
         });
 
         AddNavButton("Сервис данных", "Очистка и контроль записей", delegate
         {
             SetActiveSection("Сервис данных", "Контролируйте данные и одновременно следите за состоянием базы.");
-            new DataToolsForm(Db).ShowDialog(this);
-            RefreshStats();
+            ShowEmbeddedForm(new DataToolsForm(Db));
         });
 
         AddNavButton("Отчет: журнал", "Предпросмотр отчета Access", delegate
@@ -1239,8 +1239,8 @@ internal sealed class MainForm : GlassForm
         };
 
         navLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            navLayout.RowCount = navLayout.RowCount + 1;
-            navLayout.Controls.Add(button, 0, navLayout.RowCount - 1);
+        navLayout.RowCount = navLayout.RowCount + 1;
+        navLayout.Controls.Add(button, 0, navLayout.RowCount - 1);
         navButtons[title] = button;
     }
 
@@ -1274,6 +1274,38 @@ internal sealed class MainForm : GlassForm
         });
     }
 
+    private void ShowEmbeddedForm(Form form)
+    {
+        if (activeEmbeddedForm != null)
+        {
+            Form oldForm = activeEmbeddedForm;
+            activeEmbeddedForm = null;
+            oldForm.Close();
+            oldForm.Dispose();
+        }
+
+        activeEmbeddedForm = form;
+        form.TopLevel = false;
+        form.FormBorderStyle = FormBorderStyle.None;
+        form.Dock = DockStyle.Fill;
+        form.StartPosition = FormStartPosition.Manual;
+        form.FormClosed += delegate
+        {
+            if (ReferenceEquals(activeEmbeddedForm, form))
+            {
+                activeEmbeddedForm = null;
+                contentPanel.Controls.Remove(form);
+                homeLayout.Visible = true;
+                RefreshStats();
+            }
+        };
+
+        homeLayout.Visible = false;
+        contentPanel.Controls.Add(form);
+        form.BringToFront();
+        form.Show();
+    }
+
     private void SetActiveSection(string title, string hint)
     {
         sectionTitle.Text = title;
@@ -1294,7 +1326,7 @@ internal sealed class MainForm : GlassForm
         {
             try
             {
-                System.Diagnostics.Process.Start(path);
+                ShowEmbeddedForm(new DocumentViewerForm(path, "Руководство пользователя — PDF"));
             }
             catch (Exception ex)
             {
@@ -1305,7 +1337,7 @@ internal sealed class MainForm : GlassForm
         {
             try
             {
-                new DocumentViewerForm(path, "Руководство пользователя").ShowDialog(this);
+                ShowEmbeddedForm(new DocumentViewerForm(path, "Руководство пользователя"));
             }
             catch (Exception ex)
             {
@@ -3376,59 +3408,167 @@ internal sealed class PrintOptionsForm : Form
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimumSize = new Size(400, 300);
 
+            TableLayoutPanel layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Fill;
+            layout.BackColor = Color.Transparent;
+            layout.ColumnCount = 1;
+            layout.RowCount = 2;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            Controls.Add(layout);
+
+            FlowLayoutPanel header = new FlowLayoutPanel();
+            header.Dock = DockStyle.Fill;
+            header.AutoSize = true;
+            header.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            header.FlowDirection = FlowDirection.LeftToRight;
+            header.WrapContents = false;
+            header.Padding = new Padding(0, 0, 0, 12);
+            layout.Controls.Add(header, 0, 0);
+
+            Button back = new GlassButton();
+            back.Text = "Назад";
+            back.SetBounds(0, 0, 118, 38);
+            Theme.StyleButton(back, false);
+            back.Click += delegate { Close(); };
+            header.Controls.Add(back);
+
+            Label caption = Theme.Label(Path.GetFileName(filePath), Theme.H2Font, Theme.Ink);
+            caption.Margin = new Padding(14, 6, 0, 0);
+            header.Controls.Add(caption);
+
+            if (filePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                WebBrowser browser = new WebBrowser();
+                browser.Dock = DockStyle.Fill;
+                browser.AllowWebBrowserDrop = false;
+                browser.IsWebBrowserContextMenuEnabled = true;
+                layout.Controls.Add(browser, 0, 1);
+                try
+                {
+                    browser.Navigate(new Uri(filePath));
+                }
+                catch (Exception ex)
+                {
+                    browser.DocumentText = "<html><body style='font-family:Segoe UI;padding:24px'>Не удалось открыть PDF внутри приложения: " +
+                                           System.Security.SecurityElement.Escape(ex.Message) + "</body></html>";
+                }
+                return;
+            }
+
             RichTextBox viewer = new RichTextBox();
             viewer.ReadOnly = true;
             viewer.Dock = DockStyle.Fill;
             viewer.BackColor = Color.White;
             viewer.ForeColor = Color.Black;
             viewer.Font = new Font("Segoe UI", 10f);
+            viewer.BorderStyle = BorderStyle.None;
+            layout.Controls.Add(viewer, 0, 1);
 
             try
             {
                 if (filePath.EndsWith(".rtf", StringComparison.OrdinalIgnoreCase))
                 {
-                    using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                    {
-                        viewer.LoadFile(stream, RichTextBoxStreamType.RichText);
-                    }
+                    LoadRtf(viewer, filePath);
                 }
                 else if (filePath.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
                 {
-                    Encoding[] encodings = { Encoding.UTF8, Encoding.GetEncoding(1251), Encoding.GetEncoding(1252) };
-                    string text = null;
-
-                    foreach (Encoding enc in encodings)
-                    {
-                        try
-                        {
-                            byte[] bytes = File.ReadAllBytes(filePath);
-                            text = enc.GetString(bytes);
-                            if (!string.IsNullOrEmpty(text) && text.Contains("РЎ") == false && text.Contains("\ufffd") == false)
-                            {
-                                break;
-                            }
-                        }
-                        catch { }
-                    }
-
-                    if (text == null)
-                    {
-                        text = File.ReadAllText(filePath, Encoding.UTF8);
-                    }
-
-                    if (text.StartsWith("\ufeff"))
-                    {
-                        text = text.Substring(1);
-                    }
-                    viewer.Text = text;
+                    viewer.Text = ReadTextDocument(filePath);
                 }
             }
             catch (Exception ex)
             {
                 viewer.Text = "Ошибка при загрузке файла: " + ex.Message;
             }
+        }
 
-            Controls.Add(viewer);
+        private static void LoadRtf(RichTextBox viewer, string filePath)
+        {
+            try
+            {
+                using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    viewer.LoadFile(stream, RichTextBoxStreamType.RichText);
+                }
+                if (!LooksBroken(viewer.Text)) return;
+            }
+            catch
+            {
+            }
+
+            string rtf = ReadTextDocument(filePath);
+            if (!rtf.TrimStart().StartsWith("{\\rtf", StringComparison.OrdinalIgnoreCase))
+            {
+                viewer.Text = rtf;
+                return;
+            }
+
+            viewer.Rtf = EscapeUnicodeForLegacyRtf(rtf);
+        }
+
+        private static string ReadTextDocument(string filePath)
+        {
+            byte[] bytes = File.ReadAllBytes(filePath);
+            Encoding[] encodings = { new UTF8Encoding(false, true), Encoding.GetEncoding(1251), Encoding.GetEncoding(1252), Encoding.UTF8 };
+            string best = null;
+
+            foreach (Encoding enc in encodings)
+            {
+                try
+                {
+                    string text = enc.GetString(bytes);
+                    if (best == null || ScoreText(text) > ScoreText(best)) best = text;
+                    if (!LooksBroken(text)) break;
+                }
+                catch
+                {
+                }
+            }
+
+            if (best == null) best = File.ReadAllText(filePath, Encoding.UTF8);
+            if (best.StartsWith("\ufeff")) best = best.Substring(1);
+            return best;
+        }
+
+        private static bool LooksBroken(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text.IndexOf('�') >= 0 ||
+                   text.IndexOf("Р", StringComparison.Ordinal) >= 0 && text.IndexOf("С", StringComparison.Ordinal) >= 0 && text.IndexOf("Ð", StringComparison.Ordinal) >= 0;
+        }
+
+        private static int ScoreText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            int score = 0;
+            foreach (char c in text)
+            {
+                if (c >= 'А' && c <= 'я') score += 2;
+                if (c == '�') score -= 8;
+            }
+            return score;
+        }
+
+        private static string EscapeUnicodeForLegacyRtf(string rtf)
+        {
+            StringBuilder builder = new StringBuilder(rtf.Length + 256);
+            foreach (char c in rtf)
+            {
+                if (c <= 127)
+                {
+                    builder.Append(c);
+                }
+                else
+                {
+                    int value = c;
+                    if (value > 32767) value -= 65536;
+                    builder.Append("\\u");
+                    builder.Append(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    builder.Append('?');
+                }
+            }
+            return builder.ToString();
         }
     }
 }
