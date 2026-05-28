@@ -80,6 +80,13 @@ namespace HealthcareSanatoriumInterface
         public static readonly Font BaseFont = new Font("Segoe UI", 10f, FontStyle.Regular);
         public static readonly Font TitleFont = new Font("Segoe UI Semibold", 21f, FontStyle.Bold);
         public static readonly Font H2Font = new Font("Segoe UI Semibold", 14f, FontStyle.Bold);
+        public static readonly Font ButtonFont = new Font("Segoe UI Semibold", 10f, FontStyle.Bold);
+        public static readonly Font ButtonCaptionFont = new Font("Segoe UI Semibold", 9.6f, FontStyle.Bold);
+        public static readonly Font ButtonTitleFont = new Font("Segoe UI Semibold", 10.2f, FontStyle.Bold);
+        public static readonly Font ButtonSubFont = new Font("Segoe UI", 8.5f, FontStyle.Regular);
+        public static readonly Font GridHeaderFont = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
+        public static readonly Font GridCellFont = new Font("Segoe UI", 9f, FontStyle.Regular);
+        public static readonly Font StatsFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold);
 
         public static void StyleButton(Button button, bool primary)
         {
@@ -97,7 +104,7 @@ namespace HealthcareSanatoriumInterface
             button.UseVisualStyleBackColor = false;
             button.BackColor = glass == null ? (primary ? Blue : Surface) : Color.Transparent;
             button.ForeColor = primary ? Color.White : Ink;
-            button.Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold);
+            button.Font = ButtonFont;
             button.Margin = Padding.Empty;
             button.AutoEllipsis = true;
             button.MinimumSize = new Size(Math.Max(button.MinimumSize.Width, 150), Math.Max(button.MinimumSize.Height, 40));
@@ -138,13 +145,16 @@ namespace HealthcareSanatoriumInterface
             grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             grid.MultiSelect = false;
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+            grid.RowTemplate.Height = 28;
+            grid.ShowCellToolTips = false;
             grid.BackgroundColor = Surface;
             grid.BorderStyle = BorderStyle.None;
             grid.EnableHeadersVisualStyles = false;
             grid.ColumnHeadersDefaultCellStyle.BackColor = Dark ? Color.FromArgb(35, 46, 68) : Color.FromArgb(246, 248, 252);
             grid.ColumnHeadersDefaultCellStyle.ForeColor = Ink;
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
-            grid.DefaultCellStyle.Font = new Font("Segoe UI", 9f);
+            grid.ColumnHeadersDefaultCellStyle.Font = GridHeaderFont;
+            grid.DefaultCellStyle.Font = GridCellFont;
             grid.DefaultCellStyle.BackColor = Surface;
             grid.DefaultCellStyle.ForeColor = Ink;
             grid.DefaultCellStyle.SelectionBackColor = Dark ? Color.FromArgb(50, 76, 116) : Color.FromArgb(224, 239, 255);
@@ -271,29 +281,65 @@ public static class UiPerformance
         if (root == null) return;
 
         root.SuspendLayout();
-
-        foreach (Control control in root.Controls)
+        try
         {
-            try
-            {
-                System.Reflection.PropertyInfo doubleBuffered = control.GetType().GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                if (doubleBuffered != null)
-                {
-                    doubleBuffered.SetValue(control, true, null);
-                }
-                control.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            }
-            catch
-            {
-            }
-
-            if (control.HasChildren)
+            EnableDoubleBuffer(root);
+            foreach (Control control in root.Controls)
             {
                 Optimize(control);
             }
         }
+        finally
+        {
+            root.ResumeLayout(false);
+        }
+    }
 
-        root.ResumeLayout(true);
+    public static void BindGrid(DataGridView grid, DataTable table)
+    {
+        if (grid == null) return;
+
+        CurrencyManager manager = null;
+        try
+        {
+            manager = grid.BindingContext == null || grid.DataSource == null ? null : (CurrencyManager)grid.BindingContext[grid.DataSource];
+        }
+        catch
+        {
+            manager = null;
+        }
+
+        grid.SuspendLayout();
+        try
+        {
+            if (manager != null) manager.SuspendBinding();
+            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            grid.DataSource = table;
+            if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.ClearSelection();
+        }
+        finally
+        {
+            if (manager != null) manager.ResumeBinding();
+            grid.ResumeLayout(false);
+        }
+    }
+
+    public static void EnableDoubleBuffer(Control control)
+    {
+        if (control == null) return;
+        try
+        {
+            System.Reflection.PropertyInfo doubleBuffered = control.GetType().GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (doubleBuffered != null)
+            {
+                doubleBuffered.SetValue(control, true, null);
+            }
+        }
+        catch
+        {
+        }
     }
 }
 public sealed class DbContext
@@ -325,6 +371,7 @@ public sealed class DbContext
             DatabasePath = path;
             resolvedProvider = null;
             lastProviderError = null;
+            ClearLookupCache();
         }
     }
 
@@ -639,6 +686,9 @@ public sealed class DbContext
 public class GlassForm : Form
 {
     protected readonly DbContext Db;
+    private Bitmap backgroundCache;
+    private Size backgroundCacheSize;
+    private bool backgroundCacheDark;
 
     protected GlassForm(DbContext db)
     {
@@ -663,18 +713,54 @@ public class GlassForm : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+
+        if (backgroundCache == null || backgroundCacheSize != ClientSize || backgroundCacheDark != Theme.Dark)
+        {
+            ResetBackgroundCache();
+            backgroundCache = new Bitmap(ClientSize.Width, ClientSize.Height);
+            backgroundCacheSize = ClientSize;
+            backgroundCacheDark = Theme.Dark;
+            using (Graphics graphics = Graphics.FromImage(backgroundCache))
+            {
+                PaintCachedBackground(graphics);
+            }
+        }
+
+        e.Graphics.DrawImageUnscaled(backgroundCache, Point.Empty);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        ResetBackgroundCache();
+        base.OnClosed(e);
+    }
+
+    private void ResetBackgroundCache()
+    {
+        if (backgroundCache != null)
+        {
+            backgroundCache.Dispose();
+            backgroundCache = null;
+        }
+        backgroundCacheSize = Size.Empty;
+    }
+
+    private void PaintCachedBackground(Graphics graphics)
+    {
+        Rectangle bounds = new Rectangle(Point.Empty, ClientSize);
         Color from = Theme.Dark ? Color.FromArgb(11, 16, 26) : Color.FromArgb(235, 242, 252);
         Color to = Theme.Dark ? Color.FromArgb(25, 34, 52) : Color.FromArgb(250, 252, 255);
-        using (LinearGradientBrush brush = new LinearGradientBrush(ClientRectangle, from, to, 45f))
+        using (LinearGradientBrush brush = new LinearGradientBrush(bounds, from, to, 45f))
         {
-            e.Graphics.FillRectangle(brush, ClientRectangle);
+            graphics.FillRectangle(brush, bounds);
         }
 
         using (SolidBrush blue = new SolidBrush(Theme.Dark ? Color.FromArgb(58, 74, 144, 255) : Color.FromArgb(42, 0, 122, 255)))
         using (SolidBrush green = new SolidBrush(Theme.Dark ? Color.FromArgb(42, 61, 220, 132) : Color.FromArgb(32, 52, 199, 89)))
         {
-            e.Graphics.FillEllipse(blue, ClientSize.Width - 320, -90, 420, 260);
-            e.Graphics.FillEllipse(green, -120, ClientSize.Height - 220, 340, 260);
+            graphics.FillEllipse(blue, ClientSize.Width - 320, -90, 420, 260);
+            graphics.FillEllipse(green, -120, ClientSize.Height - 220, 340, 260);
         }
     }
 
@@ -759,23 +845,31 @@ public class GlassForm : Form
 
     protected void FillLookup(ComboBox combo, DataTable table, string idField, string nameField, bool addAll)
     {
-        combo.Items.Clear();
-        if (addAll)
+        combo.BeginUpdate();
+        try
         {
-            combo.Items.Add(new LookupItem(0, "Все"));
-        }
+            combo.Items.Clear();
+            if (addAll)
+            {
+                combo.Items.Add(new LookupItem(0, "Все"));
+            }
 
-        foreach (DataRow row in table.Rows)
+            foreach (DataRow row in table.Rows)
+            {
+                combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
+            }
+
+            if (combo.Items.Count > 0)
+            {
+                combo.SelectedIndex = 0;
+            }
+
+            combo.DropDownStyle = ComboBoxStyle.DropDownList;
+        }
+        finally
         {
-            combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
+            combo.EndUpdate();
         }
-
-        if (combo.Items.Count > 0)
-        {
-            combo.SelectedIndex = 0;
-        }
-
-        combo.DropDownStyle = ComboBoxStyle.DropDownList;
     }
 
     protected void ApplyTheme()
@@ -784,7 +878,9 @@ public class GlassForm : Form
         {
             SuspendLayout();
             BackColor = Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249);
+            ResetBackgroundCache();
             Theme.ApplyTo(this);
+            UiPerformance.Optimize(this);
         }
         finally
         {
@@ -969,33 +1065,32 @@ public class GlassForm : Form
         private void DrawCaption(Graphics g, Rectangle rect, Color textColor)
         {
             string[] lines = Text.Replace("\r", "").Split('\n');
-            StringFormat format = new StringFormat();
-            format.Trimming = StringTrimming.EllipsisCharacter;
-            format.Alignment = TextAlign == ContentAlignment.MiddleLeft ? StringAlignment.Near : StringAlignment.Center;
-            format.LineAlignment = StringAlignment.Center;
-            int leftPadding = Large ? 18 : 9;
-            RectangleF textRect = new RectangleF(rect.X + leftPadding, rect.Y + 2, rect.Width - (leftPadding * 2), rect.Height - 4);
+            using (StringFormat format = new StringFormat())
+            {
+                format.Trimming = StringTrimming.EllipsisCharacter;
+                format.Alignment = TextAlign == ContentAlignment.MiddleLeft ? StringAlignment.Near : StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                int leftPadding = Large ? 18 : 9;
+                RectangleF textRect = new RectangleF(rect.X + leftPadding, rect.Y + 2, rect.Width - (leftPadding * 2), rect.Height - 4);
 
-            if (lines.Length > 1)
-            {
-                using (Font titleFont = new Font("Segoe UI Semibold", 10.2f, FontStyle.Bold))
-                using (Font subFont = new Font("Segoe UI", 8.5f, FontStyle.Regular))
-                using (SolidBrush titleBrush = new SolidBrush(textColor))
-                using (SolidBrush subBrush = new SolidBrush(Primary ? Color.FromArgb(225, 255, 255, 255) : Theme.Muted))
+                if (lines.Length > 1)
                 {
-                    float y = rect.Y + (rect.Height - 42) / 2f;
-                    RectangleF titleRect = new RectangleF(textRect.X, y, textRect.Width, 22);
-                    RectangleF subRect = new RectangleF(textRect.X, y + 24, textRect.Width, 18);
-                    g.DrawString(lines[0], titleFont, titleBrush, titleRect, format);
-                    g.DrawString(lines[1], subFont, subBrush, subRect, format);
+                    using (SolidBrush titleBrush = new SolidBrush(textColor))
+                    using (SolidBrush subBrush = new SolidBrush(Primary ? Color.FromArgb(225, 255, 255, 255) : Theme.Muted))
+                    {
+                        float y = rect.Y + (rect.Height - 42) / 2f;
+                        RectangleF titleRect = new RectangleF(textRect.X, y, textRect.Width, 22);
+                        RectangleF subRect = new RectangleF(textRect.X, y + 24, textRect.Width, 18);
+                        g.DrawString(lines[0], Theme.ButtonTitleFont, titleBrush, titleRect, format);
+                        g.DrawString(lines[1], Theme.ButtonSubFont, subBrush, subRect, format);
+                    }
                 }
-            }
-            else
-            {
-                using (Font font = new Font("Segoe UI Semibold", 9.6f, FontStyle.Bold))
-                using (SolidBrush brush = new SolidBrush(textColor))
+                else
                 {
-                    g.DrawString(Text, font, brush, textRect, format);
+                    using (SolidBrush brush = new SolidBrush(textColor))
+                    {
+                        g.DrawString(Text, Theme.ButtonCaptionFont, brush, textRect, format);
+                    }
                 }
             }
         }
@@ -1143,7 +1238,7 @@ internal sealed class MainForm : GlassForm
         sectionHint.MaximumSize = new Size(760, 0);
         homeLayout.Controls.Add(sectionHint, 0, 1);
 
-        stats = Theme.Label("", new Font("Segoe UI Semibold", 11f, FontStyle.Bold), Theme.Blue);
+        stats = Theme.Label("", Theme.StatsFont, Theme.Blue);
         stats.Margin = new Padding(0, 0, 0, 16);
         homeLayout.Controls.Add(stats, 0, 2);
 
@@ -1302,6 +1397,7 @@ internal sealed class MainForm : GlassForm
 
         homeLayout.Visible = false;
         contentPanel.Controls.Add(form);
+        UiPerformance.Optimize(form);
         form.BringToFront();
         form.Show();
     }
@@ -1443,7 +1539,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(region, Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
                     LoadGrid();
                 });
             };
@@ -1483,8 +1579,7 @@ internal sealed class MainForm : GlassForm
                     "INNER JOIN tblPensionerCategories AS c ON p.CategoryID = c.CategoryID ";
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY p.LastName, p.FirstName";
-                grid.DataSource = Db.Query(sql, parameters.ToArray());
-                if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+                UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
             });
         }
 
@@ -1618,8 +1713,8 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(region, Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
-                    FillLookup(status, Db.Lookup("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
+                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
                     LoadGrid();
                 });
             };
@@ -1660,8 +1755,7 @@ internal sealed class MainForm : GlassForm
                     "INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID ";
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY vi.IssueDate DESC, vi.VoucherNo";
-                grid.DataSource = Db.Query(sql, parameters.ToArray());
-                if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+                UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
             });
         }
 
@@ -1838,7 +1932,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(profile, Db.Lookup("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
+                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
                     LoadGrid();
                 });
             };
@@ -1867,8 +1961,7 @@ internal sealed class MainForm : GlassForm
                     "INNER JOIN tblMedicalProfiles AS mp ON s.ProfileID = mp.ProfileID ";
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY s.SanatoriumName";
-                grid.DataSource = Db.Query(sql, parameters.ToArray());
-                if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+                UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
             });
         }
 
@@ -2127,8 +2220,8 @@ internal abstract class RecordFormBase : GlassForm
 
         public PensionerEditForm(DbContext db) : base(db, "Добавление пенсионера", new Size(720, 690))
         {
-            region = AddLookup("Регион", Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
-            category = AddLookup("Категория", Db.Lookup("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
+            region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
+            category = AddLookup("Категория", Db.LookupCached("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
             last = AddText("Фамилия *", "", 330);
             first = AddText("Имя *", "", 330);
             middle = AddText("Отчество", "", 330);
@@ -2181,9 +2274,9 @@ internal abstract class RecordFormBase : GlassForm
         {
             number = AddText("Номер путевки *", "V-" + DateTime.Now.ToString("yyyyMMddHHmmss"), 300);
             pensioner = AddLookup("Пенсионер", Db.Query("SELECT PensionerID, LastName & ' ' & FirstName & ' (' & PensionCertificateNo & ')' AS FullName FROM tblPensioners ORDER BY LastName, FirstName"), "PensionerID", "FullName");
-            sanatorium = AddLookup("Санаторий", Db.Lookup("tblSanatoriums", "SanatoriumID", "SanatoriumName"), "SanatoriumID", "SanatoriumName");
-            funding = AddLookup("Источник", Db.Lookup("tblFundingSources", "FundingSourceID", "FundingSourceName"), "FundingSourceID", "FundingSourceName");
-            status = AddLookup("Статус", Db.Lookup("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName");
+            sanatorium = AddLookup("Санаторий", Db.LookupCached("tblSanatoriums", "SanatoriumID", "SanatoriumName"), "SanatoriumID", "SanatoriumName");
+            funding = AddLookup("Источник", Db.LookupCached("tblFundingSources", "FundingSourceID", "FundingSourceName"), "FundingSourceID", "FundingSourceName");
+            status = AddLookup("Статус", Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName");
             issueDate = AddDate("Дата регистрации", DateTime.Today);
             startDate = AddDate("Дата заезда", DateTime.Today.AddDays(14));
             endDate = AddDate("Дата выезда", DateTime.Today.AddDays(27));
@@ -2237,8 +2330,8 @@ internal abstract class RecordFormBase : GlassForm
 
         public SanatoriumEditForm(DbContext db) : base(db, "Добавление санатория", new Size(720, 600))
         {
-            region = AddLookup("Регион", Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
-            profile = AddLookup("Профиль", Db.Lookup("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
+            region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
+            profile = AddLookup("Профиль", Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
             name = AddText("Санаторий *", "", 360);
             address = AddText("Адрес", "", 390);
             phone = AddText("Телефон", "", 240);
