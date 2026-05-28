@@ -1,0 +1,33 @@
+# Build and distribution
+build/
+dist/
+*.exe
+*.msi
+*.dll
+*.pdb
+*.log
+
+# Installer
+installer/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.zip
+build_output/
