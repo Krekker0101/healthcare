@@ -1277,6 +1277,13 @@ internal sealed class MainForm : GlassForm
         manualTxt.Click += delegate { OpenManual("txt"); };
         manualBar.Controls.Add(manualTxt);
 
+        Button allPdf = new GlassButton();
+        allPdf.Text = "PDF: все таблицы";
+        allPdf.SetBounds(0, 0, 170, 42);
+        Theme.StyleButton(allPdf, true);
+        allPdf.Click += delegate { ExportAllTablesPdf(); };
+        manualBar.Controls.Add(allPdf);
+
         AddNavButton("Пенсионеры", "Карточки, фильтры, поиск", delegate
         {
             SetActiveSection("Пенсионеры", "Добавляйте, ищите и удаляйте записи пенсионеров в одном месте.");
@@ -1442,6 +1449,17 @@ internal sealed class MainForm : GlassForm
         }
     }
 
+    private void ExportAllTablesPdf()
+    {
+        Guard(delegate
+        {
+            if (ReportTables.ExportAllTablesPdf(this, Db))
+            {
+                ToastNotifier.Show(this, "PDF со всеми таблицами сохранен", true);
+            }
+        });
+    }
+
     private void ChooseDatabase(object sender, EventArgs e)
     {
         using (OpenFileDialog dialog = new OpenFileDialog())
@@ -1504,6 +1522,14 @@ internal sealed class MainForm : GlassForm
             Theme.StyleButton(load, true);
             load.Click += delegate { LoadGrid(); };
             panel.Controls.Add(load);
+
+            Button exportPdf = new GlassButton();
+            exportPdf.Text = "PDF";
+            exportPdf.SetBounds(904, 84, 114, 38);
+            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            Theme.StyleButton(exportPdf, false);
+            exportPdf.Click += delegate { ExportPdf(); };
+            panel.Controls.Add(exportPdf);
 
             Button add = new GlassButton();
             add.Text = "Добавить";
@@ -1580,6 +1606,16 @@ internal sealed class MainForm : GlassForm
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY p.LastName, p.FirstName";
                 UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
+            });
+        }
+
+        private void ExportPdf()
+        {
+            Guard(delegate
+            {
+                if (grid.Rows.Count == 0) LoadGrid();
+                bool saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Пенсионеры - текущая таблица", grid, false, "pensioners.pdf");
+                if (saved) ToastNotifier.Show(this, "PDF пенсионеров сохранен", true);
             });
         }
 
@@ -1798,6 +1834,15 @@ internal sealed class MainForm : GlassForm
                 using (PrintOptionsForm options = new PrintOptionsForm(preferPrint))
                 {
                     if (options.ShowDialog(this) != DialogResult.OK) return;
+                    if (options.Target == PrintTarget.AllTables)
+                    {
+                        if (ReportTables.ExportAllTablesPdf(this, Db))
+                        {
+                            ToastNotifier.Show(this, "PDF со всеми таблицами сохранен", true);
+                        }
+                        return;
+                    }
+
                     if (options.ExportPdf)
                     {
                         bool saved = false;
@@ -1899,6 +1944,14 @@ internal sealed class MainForm : GlassForm
             load.Click += delegate { LoadGrid(); };
             panel.Controls.Add(load);
 
+            Button exportPdf = new GlassButton();
+            exportPdf.Text = "PDF";
+            exportPdf.SetBounds(674, 84, 114, 38);
+            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            Theme.StyleButton(exportPdf, false);
+            exportPdf.Click += delegate { ExportPdf(); };
+            panel.Controls.Add(exportPdf);
+
             Button add = new GlassButton();
             add.Text = "Добавить";
             add.SetBounds(28, 520, 132, 40);
@@ -1962,6 +2015,16 @@ internal sealed class MainForm : GlassForm
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY s.SanatoriumName";
                 UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
+            });
+        }
+
+        private void ExportPdf()
+        {
+            Guard(delegate
+            {
+                if (grid.Rows.Count == 0) LoadGrid();
+                bool saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Санатории - текущая таблица", grid, false, "sanatoriums.pdf");
+                if (saved) ToastNotifier.Show(this, "PDF санаториев сохранен", true);
             });
         }
 
@@ -2496,12 +2559,62 @@ internal sealed class DataToolsForm : GlassForm
 }
 
 
+    internal static class ReportTables
+    {
+        public static bool ExportAllTablesPdf(IWin32Window owner, DbContext db)
+        {
+            List<ProfessionalPdfExporter.Section> sections = new List<ProfessionalPdfExporter.Section>();
+            AddSection(sections, "Пенсионеры", delegate { return Pensioners(db); });
+            AddSection(sections, "Журнал путевок", delegate { return Vouchers(db); });
+            AddSection(sections, "Санатории", delegate { return Sanatoriums(db); });
+            AddSection(sections, "Итоги по санаториям", delegate { return RegionTotals(db); });
+            return ProfessionalPdfExporter.ExportSectionsWithDialog(owner, "Сводный отчет по всем таблицам", sections, "all_healthcare_tables.pdf");
+        }
+
+        private static void AddSection(List<ProfessionalPdfExporter.Section> sections, string title, Func<DataTable> loader)
+        {
+            try
+            {
+                sections.Add(ProfessionalPdfExporter.Section.FromDataTable(title, loader()));
+            }
+            catch (Exception ex)
+            {
+                DataTable error = new DataTable();
+                error.Columns.Add("Раздел");
+                error.Columns.Add("Статус");
+                error.Rows.Add(title, "Не удалось загрузить: " + ex.Message);
+                sections.Add(ProfessionalPdfExporter.Section.FromDataTable(title, error));
+            }
+        }
+
+        public static DataTable Pensioners(DbContext db)
+        {
+            return db.Query("SELECT p.LastName AS [Фамилия], p.FirstName AS [Имя], p.MiddleName AS [Отчество], r.RegionName AS [Регион], c.CategoryName AS [Категория], p.BirthDate AS [Дата рождения], p.PensionCertificateNo AS [Удостоверение], p.Phone AS [Телефон] FROM (tblPensioners AS p INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) INNER JOIN tblPensionerCategories AS c ON p.CategoryID = c.CategoryID ORDER BY p.LastName, p.FirstName");
+        }
+
+        public static DataTable Vouchers(DbContext db)
+        {
+            return db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+        }
+
+        public static DataTable Sanatoriums(DbContext db)
+        {
+            return db.Query("SELECT s.SanatoriumName AS [Санаторий], r.RegionName AS [Регион], mp.ProfileName AS [Профиль], s.CapacityBeds AS [Коек], s.PricePerDay AS [Цена дня], s.Phone AS [Телефон], s.Address AS [Адрес], IIf(s.IsActive, 'Да', 'Нет') AS [Работает] FROM (tblSanatoriums AS s INNER JOIN tblRegions AS r ON s.RegionID = r.RegionID) INNER JOIN tblMedicalProfiles AS mp ON s.ProfileID = mp.ProfileID ORDER BY s.SanatoriumName");
+        }
+
+        public static DataTable RegionTotals(DbContext db)
+        {
+            return db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
+        }
+    }
+
     internal enum PrintTarget
     {
         AccessJournal,
         AccessRegionTotals,
         VisibleGrid,
-        SelectedGridRow
+        SelectedGridRow,
+        AllTables
     }
 
     
@@ -2563,6 +2676,7 @@ internal sealed class PrintOptionsForm : Form
         target.Items.Add(new PrintChoice(PrintTarget.AccessRegionTotals, "Отчет Access: итоги по регионам"));
         target.Items.Add(new PrintChoice(PrintTarget.VisibleGrid, "Текущая таблица: все видимые строки"));
         target.Items.Add(new PrintChoice(PrintTarget.SelectedGridRow, "Текущая таблица: выбранная строка"));
+        target.Items.Add(new PrintChoice(PrintTarget.AllTables, "PDF: все основные таблицы вместе"));
         target.SelectedIndex = 0;
         targetRow.Controls.Add(target, 1, 0);
 
@@ -2812,6 +2926,86 @@ internal sealed class PrintOptionsForm : Form
         private const int PagePixelWidth = PagePointWidth * Scale;
         private const int PagePixelHeight = PagePointHeight * Scale;
 
+        public sealed class Section
+        {
+            private Section(string title, List<string> headers, List<string[]> rows)
+            {
+                Title = title;
+                Headers = headers;
+                Rows = rows;
+            }
+
+            public string Title { get; private set; }
+            public List<string> Headers { get; private set; }
+            public List<string[]> Rows { get; private set; }
+
+            public static Section FromDataTable(string title, DataTable table)
+            {
+                List<string> headers = new List<string>();
+                List<string[]> rows = new List<string[]>();
+                if (table != null)
+                {
+                    foreach (DataColumn column in table.Columns)
+                    {
+                        headers.Add(column.ColumnName);
+                    }
+
+                    foreach (DataRow row in table.Rows)
+                    {
+                        string[] values = new string[table.Columns.Count];
+                        for (int i = 0; i < table.Columns.Count; i++)
+                        {
+                            values[i] = FormatValue(row[i]);
+                        }
+                        rows.Add(values);
+                    }
+                }
+
+                if (headers.Count == 0)
+                {
+                    headers.Add("Статус");
+                }
+                if (rows.Count == 0)
+                {
+                    rows.Add(new string[] { "Нет данных" });
+                }
+                return new Section(title, headers, rows);
+            }
+        }
+
+        public static bool ExportSectionsWithDialog(IWin32Window owner, string title, List<Section> sections, string defaultFileName)
+        {
+            if (sections == null || sections.Count == 0)
+            {
+                MessageBox.Show("Нет данных для PDF.", "PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return false;
+            }
+
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Filter = "PDF файл (*.pdf)|*.pdf";
+                dialog.FileName = defaultFileName;
+                dialog.Title = "Сохранить PDF";
+                if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
+
+                List<byte[]> pages = new List<byte[]>();
+                foreach (Section section in sections)
+                {
+                    if (section == null) continue;
+                    pages.AddRange(RenderPages(title, section.Title, section.Headers, section.Rows));
+                }
+
+                if (pages.Count == 0)
+                {
+                    MessageBox.Show("Нет страниц для PDF.", "PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return false;
+                }
+
+                WriteImagePdf(dialog.FileName, pages);
+                return true;
+            }
+        }
+
         public static bool ExportDataTableWithDialog(IWin32Window owner, string title, string subtitle, DataTable table, string defaultFileName)
         {
             if (table == null || table.Rows.Count == 0)
@@ -2958,7 +3152,7 @@ internal sealed class PrintOptionsForm : Form
             int rowHeight = 48;
             int footerHeight = 82;
             int rowsPerPage = Math.Max(1, (PagePixelHeight - yStart - tableHeaderHeight - footerHeight - margin) / rowHeight);
-            int pageCount = (int)Math.Ceiling(rows.Count / (double)rowsPerPage);
+            int pageCount = Math.Max(1, (int)Math.Ceiling(rows.Count / (double)rowsPerPage));
             int rowIndex = 0;
 
             for (int page = 1; page <= pageCount; page++)
@@ -3628,7 +3822,10 @@ internal sealed class PrintOptionsForm : Form
         {
             if (string.IsNullOrEmpty(text)) return false;
             return text.IndexOf('�') >= 0 ||
-                   text.IndexOf("Р", StringComparison.Ordinal) >= 0 && text.IndexOf("С", StringComparison.Ordinal) >= 0 && text.IndexOf("Ð", StringComparison.Ordinal) >= 0;
+                   text.IndexOf("Ð", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf("РЎ", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf("Рђ", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf("СЃ", StringComparison.Ordinal) >= 0;
         }
 
         private static int ScoreText(string text)
