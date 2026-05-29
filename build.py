@@ -20,6 +20,11 @@ def find_csc():
     for path in candidates:
         if os.path.exists(path):
             return path
+
+    for tool in ("csc", "mcs", "mono-csc"):
+        path = shutil.which(tool)
+        if path:
+            return path
     return None
 
 
@@ -157,15 +162,21 @@ def main():
         "UserGuide.pdf",
     ) if (payload / f).exists()]
 
-    run([
-        csc, "/nologo", "/target:winexe", "/optimize+", "/codepage:65001",
-        "/out:" + str(dist / "Setup.exe"),
-        "/win32icon:" + str(icon_src),
-        "/reference:System.dll",
-        "/reference:System.Core.dll",
-        "/reference:System.Drawing.dll",
-        "/reference:System.Windows.Forms.dll",
-    ] + setup_resources + [str(root / "installer" / "SetupHost.cs")])
+    setup_host = root / "installer" / "SetupHost.cs"
+    installer_built = False
+    if setup_host.exists():
+        run([
+            csc, "/nologo", "/target:winexe", "/optimize+", "/codepage:65001",
+            "/out:" + str(dist / "Setup.exe"),
+            "/win32icon:" + str(icon_src),
+            "/reference:System.dll",
+            "/reference:System.Core.dll",
+            "/reference:System.Drawing.dll",
+            "/reference:System.Windows.Forms.dll",
+        ] + setup_resources + [str(setup_host)])
+        installer_built = True
+    else:
+        print("WARNING: installer/SetupHost.cs not found; installer build skipped.")
 
     shutil.rmtree(payload, ignore_errors=True)
 
@@ -175,7 +186,10 @@ def main():
     print(f"Launcher:   {build / 'HealthcareSanatoriumInterface.exe'}")
     print(f"x86 host:   {build / 'HealthcareSanatoriumInterface.x86.exe'}")
     print(f"x64 host:   {build / 'HealthcareSanatoriumInterface.x64.exe'}")
-    print(f"Installer:   {dist / 'Setup.exe'}")
+    if installer_built:
+        print(f"Installer:   {dist / 'Setup.exe'}")
+    else:
+        print("Installer:   skipped (installer/SetupHost.cs not found)")
     return 0
 
 

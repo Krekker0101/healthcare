@@ -80,6 +80,13 @@ namespace HealthcareSanatoriumInterface
         public static readonly Font BaseFont = new Font("Segoe UI", 10f, FontStyle.Regular);
         public static readonly Font TitleFont = new Font("Segoe UI Semibold", 21f, FontStyle.Bold);
         public static readonly Font H2Font = new Font("Segoe UI Semibold", 14f, FontStyle.Bold);
+        public static readonly Font ButtonFont = new Font("Segoe UI Semibold", 10f, FontStyle.Bold);
+        public static readonly Font ButtonCaptionFont = new Font("Segoe UI Semibold", 9.6f, FontStyle.Bold);
+        public static readonly Font ButtonTitleFont = new Font("Segoe UI Semibold", 10.2f, FontStyle.Bold);
+        public static readonly Font ButtonSubFont = new Font("Segoe UI", 8.5f, FontStyle.Regular);
+        public static readonly Font GridHeaderFont = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
+        public static readonly Font GridCellFont = new Font("Segoe UI", 9f, FontStyle.Regular);
+        public static readonly Font StatsFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold);
 
         public static void StyleButton(Button button, bool primary)
         {
@@ -97,7 +104,7 @@ namespace HealthcareSanatoriumInterface
             button.UseVisualStyleBackColor = false;
             button.BackColor = glass == null ? (primary ? Blue : Surface) : Color.Transparent;
             button.ForeColor = primary ? Color.White : Ink;
-            button.Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold);
+            button.Font = ButtonFont;
             button.Margin = Padding.Empty;
             button.AutoEllipsis = true;
             button.MinimumSize = new Size(Math.Max(button.MinimumSize.Width, 150), Math.Max(button.MinimumSize.Height, 40));
@@ -138,13 +145,16 @@ namespace HealthcareSanatoriumInterface
             grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             grid.MultiSelect = false;
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+            grid.RowTemplate.Height = 28;
+            grid.ShowCellToolTips = false;
             grid.BackgroundColor = Surface;
             grid.BorderStyle = BorderStyle.None;
             grid.EnableHeadersVisualStyles = false;
             grid.ColumnHeadersDefaultCellStyle.BackColor = Dark ? Color.FromArgb(35, 46, 68) : Color.FromArgb(246, 248, 252);
             grid.ColumnHeadersDefaultCellStyle.ForeColor = Ink;
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
-            grid.DefaultCellStyle.Font = new Font("Segoe UI", 9f);
+            grid.ColumnHeadersDefaultCellStyle.Font = GridHeaderFont;
+            grid.DefaultCellStyle.Font = GridCellFont;
             grid.DefaultCellStyle.BackColor = Surface;
             grid.DefaultCellStyle.ForeColor = Ink;
             grid.DefaultCellStyle.SelectionBackColor = Dark ? Color.FromArgb(50, 76, 116) : Color.FromArgb(224, 239, 255);
@@ -271,29 +281,65 @@ public static class UiPerformance
         if (root == null) return;
 
         root.SuspendLayout();
-
-        foreach (Control control in root.Controls)
+        try
         {
-            try
-            {
-                System.Reflection.PropertyInfo doubleBuffered = control.GetType().GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                if (doubleBuffered != null)
-                {
-                    doubleBuffered.SetValue(control, true, null);
-                }
-                control.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            }
-            catch
-            {
-            }
-
-            if (control.HasChildren)
+            EnableDoubleBuffer(root);
+            foreach (Control control in root.Controls)
             {
                 Optimize(control);
             }
         }
+        finally
+        {
+            root.ResumeLayout(false);
+        }
+    }
 
-        root.ResumeLayout(true);
+    public static void BindGrid(DataGridView grid, DataTable table)
+    {
+        if (grid == null) return;
+
+        CurrencyManager manager = null;
+        try
+        {
+            manager = grid.BindingContext == null || grid.DataSource == null ? null : (CurrencyManager)grid.BindingContext[grid.DataSource];
+        }
+        catch
+        {
+            manager = null;
+        }
+
+        grid.SuspendLayout();
+        try
+        {
+            if (manager != null) manager.SuspendBinding();
+            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            grid.DataSource = table;
+            if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.ClearSelection();
+        }
+        finally
+        {
+            if (manager != null) manager.ResumeBinding();
+            grid.ResumeLayout(false);
+        }
+    }
+
+    public static void EnableDoubleBuffer(Control control)
+    {
+        if (control == null) return;
+        try
+        {
+            System.Reflection.PropertyInfo doubleBuffered = control.GetType().GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (doubleBuffered != null)
+            {
+                doubleBuffered.SetValue(control, true, null);
+            }
+        }
+        catch
+        {
+        }
     }
 }
 public sealed class DbContext
@@ -325,6 +371,7 @@ public sealed class DbContext
             DatabasePath = path;
             resolvedProvider = null;
             lastProviderError = null;
+            ClearLookupCache();
         }
     }
 
@@ -639,6 +686,10 @@ public sealed class DbContext
 public class GlassForm : Form
 {
     protected readonly DbContext Db;
+    private readonly Dictionary<string, DateTime> inlineConfirmations = new Dictionary<string, DateTime>();
+    private Bitmap backgroundCache;
+    private Size backgroundCacheSize;
+    private bool backgroundCacheDark;
 
     protected GlassForm(DbContext db)
     {
@@ -663,18 +714,54 @@ public class GlassForm : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+
+        if (backgroundCache == null || backgroundCacheSize != ClientSize || backgroundCacheDark != Theme.Dark)
+        {
+            ResetBackgroundCache();
+            backgroundCache = new Bitmap(ClientSize.Width, ClientSize.Height);
+            backgroundCacheSize = ClientSize;
+            backgroundCacheDark = Theme.Dark;
+            using (Graphics graphics = Graphics.FromImage(backgroundCache))
+            {
+                PaintCachedBackground(graphics);
+            }
+        }
+
+        e.Graphics.DrawImageUnscaled(backgroundCache, Point.Empty);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        ResetBackgroundCache();
+        base.OnClosed(e);
+    }
+
+    private void ResetBackgroundCache()
+    {
+        if (backgroundCache != null)
+        {
+            backgroundCache.Dispose();
+            backgroundCache = null;
+        }
+        backgroundCacheSize = Size.Empty;
+    }
+
+    private void PaintCachedBackground(Graphics graphics)
+    {
+        Rectangle bounds = new Rectangle(Point.Empty, ClientSize);
         Color from = Theme.Dark ? Color.FromArgb(11, 16, 26) : Color.FromArgb(235, 242, 252);
         Color to = Theme.Dark ? Color.FromArgb(25, 34, 52) : Color.FromArgb(250, 252, 255);
-        using (LinearGradientBrush brush = new LinearGradientBrush(ClientRectangle, from, to, 45f))
+        using (LinearGradientBrush brush = new LinearGradientBrush(bounds, from, to, 45f))
         {
-            e.Graphics.FillRectangle(brush, ClientRectangle);
+            graphics.FillRectangle(brush, bounds);
         }
 
         using (SolidBrush blue = new SolidBrush(Theme.Dark ? Color.FromArgb(58, 74, 144, 255) : Color.FromArgb(42, 0, 122, 255)))
         using (SolidBrush green = new SolidBrush(Theme.Dark ? Color.FromArgb(42, 61, 220, 132) : Color.FromArgb(32, 52, 199, 89)))
         {
-            e.Graphics.FillEllipse(blue, ClientSize.Width - 320, -90, 420, 260);
-            e.Graphics.FillEllipse(green, -120, ClientSize.Height - 220, 340, 260);
+            graphics.FillEllipse(blue, ClientSize.Width - 320, -90, 420, 260);
+            graphics.FillEllipse(green, -120, ClientSize.Height - 220, 340, 260);
         }
     }
 
@@ -714,6 +801,54 @@ public class GlassForm : Form
             ErrorLogger.LogException(ex);
             ToastNotifier.Show(this, "Операция не выполнена: " + ex.Message, false);
         }
+    }
+
+    protected void ShowChildPage(Form form, Action<bool> closed)
+    {
+        List<Control> hiddenControls = new List<Control>();
+        foreach (Control control in Controls)
+        {
+            if (control.Visible)
+            {
+                hiddenControls.Add(control);
+                control.Visible = false;
+            }
+        }
+
+        form.TopLevel = false;
+        form.FormBorderStyle = FormBorderStyle.None;
+        form.Dock = DockStyle.Fill;
+        form.StartPosition = FormStartPosition.Manual;
+        form.FormClosed += delegate
+        {
+            bool accepted = form.DialogResult == DialogResult.OK;
+            Controls.Remove(form);
+            foreach (Control control in hiddenControls)
+            {
+                if (!control.IsDisposed) control.Visible = true;
+            }
+            if (closed != null) closed(accepted);
+            form.Dispose();
+        };
+        Controls.Add(form);
+        UiPerformance.Optimize(form);
+        form.BringToFront();
+        form.Show();
+    }
+
+    protected bool ConfirmInline(string key, string message)
+    {
+        DateTime now = DateTime.Now;
+        DateTime previous;
+        if (inlineConfirmations.TryGetValue(key, out previous) && (now - previous).TotalSeconds <= 6)
+        {
+            inlineConfirmations.Remove(key);
+            return true;
+        }
+
+        inlineConfirmations[key] = now;
+        ToastNotifier.Show(this, message + "\nНажмите эту кнопку еще раз в течение 6 секунд для подтверждения.", false);
+        return false;
     }
 
     protected async System.Threading.Tasks.Task GuardAsync(System.Func<System.Threading.Tasks.Task> action)
@@ -759,23 +894,31 @@ public class GlassForm : Form
 
     protected void FillLookup(ComboBox combo, DataTable table, string idField, string nameField, bool addAll)
     {
-        combo.Items.Clear();
-        if (addAll)
+        combo.BeginUpdate();
+        try
         {
-            combo.Items.Add(new LookupItem(0, "Все"));
-        }
+            combo.Items.Clear();
+            if (addAll)
+            {
+                combo.Items.Add(new LookupItem(0, "Все"));
+            }
 
-        foreach (DataRow row in table.Rows)
+            foreach (DataRow row in table.Rows)
+            {
+                combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
+            }
+
+            if (combo.Items.Count > 0)
+            {
+                combo.SelectedIndex = 0;
+            }
+
+            combo.DropDownStyle = ComboBoxStyle.DropDownList;
+        }
+        finally
         {
-            combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
+            combo.EndUpdate();
         }
-
-        if (combo.Items.Count > 0)
-        {
-            combo.SelectedIndex = 0;
-        }
-
-        combo.DropDownStyle = ComboBoxStyle.DropDownList;
     }
 
     protected void ApplyTheme()
@@ -784,7 +927,9 @@ public class GlassForm : Form
         {
             SuspendLayout();
             BackColor = Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249);
+            ResetBackgroundCache();
             Theme.ApplyTo(this);
+            UiPerformance.Optimize(this);
         }
         finally
         {
@@ -969,33 +1114,32 @@ public class GlassForm : Form
         private void DrawCaption(Graphics g, Rectangle rect, Color textColor)
         {
             string[] lines = Text.Replace("\r", "").Split('\n');
-            StringFormat format = new StringFormat();
-            format.Trimming = StringTrimming.EllipsisCharacter;
-            format.Alignment = TextAlign == ContentAlignment.MiddleLeft ? StringAlignment.Near : StringAlignment.Center;
-            format.LineAlignment = StringAlignment.Center;
-            int leftPadding = Large ? 18 : 9;
-            RectangleF textRect = new RectangleF(rect.X + leftPadding, rect.Y + 2, rect.Width - (leftPadding * 2), rect.Height - 4);
+            using (StringFormat format = new StringFormat())
+            {
+                format.Trimming = StringTrimming.EllipsisCharacter;
+                format.Alignment = TextAlign == ContentAlignment.MiddleLeft ? StringAlignment.Near : StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                int leftPadding = Large ? 18 : 9;
+                RectangleF textRect = new RectangleF(rect.X + leftPadding, rect.Y + 2, rect.Width - (leftPadding * 2), rect.Height - 4);
 
-            if (lines.Length > 1)
-            {
-                using (Font titleFont = new Font("Segoe UI Semibold", 10.2f, FontStyle.Bold))
-                using (Font subFont = new Font("Segoe UI", 8.5f, FontStyle.Regular))
-                using (SolidBrush titleBrush = new SolidBrush(textColor))
-                using (SolidBrush subBrush = new SolidBrush(Primary ? Color.FromArgb(225, 255, 255, 255) : Theme.Muted))
+                if (lines.Length > 1)
                 {
-                    float y = rect.Y + (rect.Height - 42) / 2f;
-                    RectangleF titleRect = new RectangleF(textRect.X, y, textRect.Width, 22);
-                    RectangleF subRect = new RectangleF(textRect.X, y + 24, textRect.Width, 18);
-                    g.DrawString(lines[0], titleFont, titleBrush, titleRect, format);
-                    g.DrawString(lines[1], subFont, subBrush, subRect, format);
+                    using (SolidBrush titleBrush = new SolidBrush(textColor))
+                    using (SolidBrush subBrush = new SolidBrush(Primary ? Color.FromArgb(225, 255, 255, 255) : Theme.Muted))
+                    {
+                        float y = rect.Y + (rect.Height - 42) / 2f;
+                        RectangleF titleRect = new RectangleF(textRect.X, y, textRect.Width, 22);
+                        RectangleF subRect = new RectangleF(textRect.X, y + 24, textRect.Width, 18);
+                        g.DrawString(lines[0], Theme.ButtonTitleFont, titleBrush, titleRect, format);
+                        g.DrawString(lines[1], Theme.ButtonSubFont, subBrush, subRect, format);
+                    }
                 }
-            }
-            else
-            {
-                using (Font font = new Font("Segoe UI Semibold", 9.6f, FontStyle.Bold))
-                using (SolidBrush brush = new SolidBrush(textColor))
+                else
                 {
-                    g.DrawString(Text, font, brush, textRect, format);
+                    using (SolidBrush brush = new SolidBrush(textColor))
+                    {
+                        g.DrawString(Text, Theme.ButtonCaptionFont, brush, textRect, format);
+                    }
                 }
             }
         }
@@ -1022,6 +1166,9 @@ internal sealed class MainForm : GlassForm
     private readonly Dictionary<string, GlassButton> navButtons = new Dictionary<string, GlassButton>();
     private readonly TableLayoutPanel navLayout;
     private readonly FlowLayoutPanel manualBar;
+    private readonly GlassPanel contentPanel;
+    private readonly TableLayoutPanel homeLayout;
+    private Form activeEmbeddedForm;
 
     public MainForm(string dbPath)
         : base(new DbContext(dbPath))
@@ -1045,11 +1192,11 @@ internal sealed class MainForm : GlassForm
         sidebar.Margin = Padding.Empty;
         root.Controls.Add(sidebar, 0, 0);
 
-        GlassPanel content = new GlassPanel();
-        content.Dock = DockStyle.Fill;
-        content.Padding = new Padding(24);
-        content.Margin = Padding.Empty;
-        root.Controls.Add(content, 1, 0);
+        contentPanel = new GlassPanel();
+        contentPanel.Dock = DockStyle.Fill;
+        contentPanel.Padding = new Padding(24);
+        contentPanel.Margin = Padding.Empty;
+        root.Controls.Add(contentPanel, 1, 0);
 
         TableLayoutPanel sidebarLayout = new TableLayoutPanel();
         sidebarLayout.Dock = DockStyle.Fill;
@@ -1118,36 +1265,36 @@ internal sealed class MainForm : GlassForm
         close.Click += delegate { Close(); };
         sidebarActions.Controls.Add(close, 0, 1);
 
-        TableLayoutPanel contentLayout = new TableLayoutPanel();
-        contentLayout.Dock = DockStyle.Fill;
-        contentLayout.BackColor = Color.Transparent;
-        contentLayout.ColumnCount = 1;
-        contentLayout.RowCount = 5;
-        contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        contentLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        content.Controls.Add(contentLayout);
+        homeLayout = new TableLayoutPanel();
+        homeLayout.Dock = DockStyle.Fill;
+        homeLayout.BackColor = Color.Transparent;
+        homeLayout.ColumnCount = 1;
+        homeLayout.RowCount = 5;
+        homeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        contentPanel.Controls.Add(homeLayout);
 
         sectionTitle = Theme.Label("Панель управления", Theme.H2Font, Theme.Ink);
         sectionTitle.Margin = new Padding(0, 0, 0, 6);
-        contentLayout.Controls.Add(sectionTitle, 0, 0);
+        homeLayout.Controls.Add(sectionTitle, 0, 0);
 
         sectionHint = Theme.Label("Современное левое меню, быстрые действия и аккуратные уведомления для всех важных событий.", Theme.BaseFont, Theme.Muted);
         sectionHint.Margin = new Padding(0, 0, 0, 10);
         sectionHint.MaximumSize = new Size(760, 0);
-        contentLayout.Controls.Add(sectionHint, 0, 1);
+        homeLayout.Controls.Add(sectionHint, 0, 1);
 
-        stats = Theme.Label("", new Font("Segoe UI Semibold", 11f, FontStyle.Bold), Theme.Blue);
+        stats = Theme.Label("", Theme.StatsFont, Theme.Blue);
         stats.Margin = new Padding(0, 0, 0, 16);
-        contentLayout.Controls.Add(stats, 0, 2);
+        homeLayout.Controls.Add(stats, 0, 2);
 
         Panel spacer = new Panel();
         spacer.Dock = DockStyle.Fill;
         spacer.BackColor = Color.Transparent;
-        contentLayout.Controls.Add(spacer, 0, 3);
+        homeLayout.Controls.Add(spacer, 0, 3);
 
         manualBar = new FlowLayoutPanel();
         manualBar.Dock = DockStyle.Fill;
@@ -1156,7 +1303,7 @@ internal sealed class MainForm : GlassForm
         manualBar.FlowDirection = FlowDirection.LeftToRight;
         manualBar.WrapContents = false;
         manualBar.Padding = new Padding(0, 12, 0, 0);
-        contentLayout.Controls.Add(manualBar, 0, 4);
+        homeLayout.Controls.Add(manualBar, 0, 4);
 
         Button manualPdf = new GlassButton();
         manualPdf.Text = "Открыть PDF";
@@ -1179,37 +1326,46 @@ internal sealed class MainForm : GlassForm
         manualTxt.Click += delegate { OpenManual("txt"); };
         manualBar.Controls.Add(manualTxt);
 
+        Button allPdf = new GlassButton();
+        allPdf.Text = "PDF: все таблицы";
+        allPdf.SetBounds(0, 0, 170, 42);
+        Theme.StyleButton(allPdf, true);
+        allPdf.Click += delegate { ExportAllTablesPdf(); };
+        manualBar.Controls.Add(allPdf);
+
         AddNavButton("Пенсионеры", "Карточки, фильтры, поиск", delegate
         {
             SetActiveSection("Пенсионеры", "Добавляйте, ищите и удаляйте записи пенсионеров в одном месте.");
-            new PensionersForm(Db).ShowDialog(this);
-            RefreshStats();
+            ShowEmbeddedForm(new PensionersForm(Db));
         });
 
         AddNavButton("Журнал путевок", "Выдача, статусы, печать", delegate
         {
             SetActiveSection("Журнал путевок", "Работайте с путевками, просматривайте историю и формируйте отчеты.");
-            new VouchersForm(Db).ShowDialog(this);
-            RefreshStats();
+            ShowEmbeddedForm(new VouchersForm(Db));
         });
 
         AddNavButton("Санатории", "Профили, регионы, коечный фонд", delegate
         {
             SetActiveSection("Санатории", "Содержите справочник санаториев и их параметры.");
-            new SanatoriumsForm(Db).ShowDialog(this);
+            ShowEmbeddedForm(new SanatoriumsForm(Db));
         });
 
         AddNavButton("Сервис данных", "Очистка и контроль записей", delegate
         {
             SetActiveSection("Сервис данных", "Контролируйте данные и одновременно следите за состоянием базы.");
-            new DataToolsForm(Db).ShowDialog(this);
-            RefreshStats();
+            ShowEmbeddedForm(new DataToolsForm(Db));
         });
 
-        AddNavButton("Отчет: журнал", "Предпросмотр отчета Access", delegate
+        AddNavButton("Отчет: журнал", "Сохранить журнал в PDF", delegate
         {
-            SetActiveSection("Отчет: журнал", "Откройте стандартный Access-отчет напрямую из приложения.");
-            ReportRunner.OpenReport(Db.DatabasePath, "rptVoucherIssues", false);
+            SetActiveSection("Отчет: журнал", "Сохраните отчет журнала как PDF внутри единого окна приложения.");
+            Guard(delegate
+            {
+                DataTable table = ReportTables.Vouchers(Db);
+                bool saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Журнал регистрации выдачи путевок", "Система здравоохранения", table, "journal_vouchers.pdf");
+                if (saved) ToastNotifier.Show(this, "Отчет журнала сохранен как PDF", true);
+            });
         });
 
         AddNavButton("Выбрать БД", "Подключить другой .accdb", delegate
@@ -1239,8 +1395,8 @@ internal sealed class MainForm : GlassForm
         };
 
         navLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            navLayout.RowCount = navLayout.RowCount + 1;
-            navLayout.Controls.Add(button, 0, navLayout.RowCount - 1);
+        navLayout.RowCount = navLayout.RowCount + 1;
+        navLayout.Controls.Add(button, 0, navLayout.RowCount - 1);
         navButtons[title] = button;
     }
 
@@ -1274,6 +1430,39 @@ internal sealed class MainForm : GlassForm
         });
     }
 
+    private void ShowEmbeddedForm(Form form)
+    {
+        if (activeEmbeddedForm != null)
+        {
+            Form oldForm = activeEmbeddedForm;
+            activeEmbeddedForm = null;
+            oldForm.Close();
+            oldForm.Dispose();
+        }
+
+        activeEmbeddedForm = form;
+        form.TopLevel = false;
+        form.FormBorderStyle = FormBorderStyle.None;
+        form.Dock = DockStyle.Fill;
+        form.StartPosition = FormStartPosition.Manual;
+        form.FormClosed += delegate
+        {
+            if (ReferenceEquals(activeEmbeddedForm, form))
+            {
+                activeEmbeddedForm = null;
+                contentPanel.Controls.Remove(form);
+                homeLayout.Visible = true;
+                RefreshStats();
+            }
+        };
+
+        homeLayout.Visible = false;
+        contentPanel.Controls.Add(form);
+        UiPerformance.Optimize(form);
+        form.BringToFront();
+        form.Show();
+    }
+
     private void SetActiveSection(string title, string hint)
     {
         sectionTitle.Text = title;
@@ -1294,7 +1483,7 @@ internal sealed class MainForm : GlassForm
         {
             try
             {
-                System.Diagnostics.Process.Start(path);
+                ShowEmbeddedForm(new DocumentViewerForm(path, "Руководство пользователя — PDF"));
             }
             catch (Exception ex)
             {
@@ -1305,7 +1494,7 @@ internal sealed class MainForm : GlassForm
         {
             try
             {
-                new DocumentViewerForm(path, "Руководство пользователя").ShowDialog(this);
+                ShowEmbeddedForm(new DocumentViewerForm(path, "Руководство пользователя"));
             }
             catch (Exception ex)
             {
@@ -1314,21 +1503,119 @@ internal sealed class MainForm : GlassForm
         }
     }
 
+    private void ExportAllTablesPdf()
+    {
+        Guard(delegate
+        {
+            if (ReportTables.ExportAllTablesPdf(this, Db))
+            {
+                ToastNotifier.Show(this, "PDF со всеми таблицами сохранен", true);
+            }
+        });
+    }
+
     private void ChooseDatabase(object sender, EventArgs e)
     {
-        using (OpenFileDialog dialog = new OpenFileDialog())
+        ShowEmbeddedForm(new DatabasePathForm(Db, delegate
         {
-            dialog.Filter = "Access database (*.accdb;*.mdb)|*.accdb;*.mdb";
-            dialog.Title = "Выберите файл базы данных";
-            if (dialog.ShowDialog(this) == DialogResult.OK)
-            {
-                Db.SetDatabasePath(dialog.FileName);
-                RefreshStats();
-                ToastNotifier.Show(this, "База подключена и данные обновлены", true);
-            }
-        }
+            RefreshStats();
+            ToastNotifier.Show(this, "База подключена и данные обновлены", true);
+        }));
     }
 }
+
+
+    internal sealed class DatabasePathForm : GlassForm
+    {
+        private readonly TextBox pathBox;
+        private readonly Action saved;
+
+        public DatabasePathForm(DbContext db, Action saved) : base(db)
+        {
+            this.saved = saved;
+            Text = "Выбор базы данных";
+            Size = new Size(900, 520);
+
+            GlassPanel panel = new GlassPanel();
+            panel.Dock = DockStyle.Fill;
+            panel.Padding = new Padding(24);
+            Controls.Add(panel);
+
+            TableLayoutPanel layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Fill;
+            layout.BackColor = Color.Transparent;
+            layout.ColumnCount = 1;
+            layout.RowCount = 5;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            panel.Controls.Add(layout);
+
+            Label title = Theme.Label("Подключение базы данных", Theme.TitleFont, Theme.Ink);
+            title.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(title, 0, 0);
+
+            Label hint = Theme.Label("Введите полный путь к файлу .accdb или .mdb. Все происходит внутри текущего окна без системных диалогов.", Theme.BaseFont, Theme.Muted);
+            hint.MaximumSize = new Size(760, 0);
+            hint.Margin = new Padding(0, 0, 0, 16);
+            layout.Controls.Add(hint, 0, 1);
+
+            pathBox = Theme.TextBox("Путь к базе данных");
+            pathBox.Text = db.DatabasePath;
+            pathBox.Dock = DockStyle.Top;
+            pathBox.Margin = new Padding(0, 0, 0, 12);
+            layout.Controls.Add(pathBox, 0, 2);
+
+            Label example = Theme.Label("Например: C:\\HealthcareSanatoriumSystem.accdb", Theme.BaseFont, Theme.Muted);
+            example.Margin = new Padding(0, 0, 0, 12);
+            layout.Controls.Add(example, 0, 3);
+
+            FlowLayoutPanel buttons = new FlowLayoutPanel();
+            buttons.Dock = DockStyle.Fill;
+            buttons.FlowDirection = FlowDirection.RightToLeft;
+            buttons.WrapContents = false;
+            buttons.AutoSize = true;
+            layout.Controls.Add(buttons, 0, 4);
+
+            Button back = new GlassButton();
+            back.Text = "Назад";
+            back.SetBounds(0, 0, 120, 40);
+            Theme.StyleButton(back, false);
+            back.Click += delegate { Close(); };
+            buttons.Controls.Add(back);
+
+            Button apply = new GlassButton();
+            apply.Text = "Подключить";
+            apply.SetBounds(0, 0, 150, 40);
+            Theme.StyleButton(apply, true);
+            apply.Click += Apply;
+            buttons.Controls.Add(apply);
+        }
+
+        private void Apply(object sender, EventArgs e)
+        {
+            string path = pathBox.Text.Trim().Trim('"');
+            if (!File.Exists(path))
+            {
+                ToastNotifier.Show(this, "Файл базы данных не найден:\n" + path, false);
+                return;
+            }
+
+            string extension = Path.GetExtension(path);
+            if (!extension.Equals(".accdb", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".mdb", StringComparison.OrdinalIgnoreCase))
+            {
+                ToastNotifier.Show(this, "Нужен файл Access .accdb или .mdb", false);
+                return;
+            }
+
+            Db.SetDatabasePath(path);
+            if (saved != null) saved();
+            Close();
+        }
+    }
 
 
     internal sealed class PensionersForm : GlassForm
@@ -1377,6 +1664,14 @@ internal sealed class MainForm : GlassForm
             load.Click += delegate { LoadGrid(); };
             panel.Controls.Add(load);
 
+            Button exportPdf = new GlassButton();
+            exportPdf.Text = "PDF";
+            exportPdf.SetBounds(904, 84, 114, 38);
+            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            Theme.StyleButton(exportPdf, false);
+            exportPdf.Click += delegate { ExportPdf(); };
+            panel.Controls.Add(exportPdf);
+
             Button add = new GlassButton();
             add.Text = "Добавить";
             add.SetBounds(28, 552, 132, 40);
@@ -1411,7 +1706,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(region, Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
                     LoadGrid();
                 });
             };
@@ -1451,8 +1746,17 @@ internal sealed class MainForm : GlassForm
                     "INNER JOIN tblPensionerCategories AS c ON p.CategoryID = c.CategoryID ";
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY p.LastName, p.FirstName";
-                grid.DataSource = Db.Query(sql, parameters.ToArray());
-                if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+                UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
+            });
+        }
+
+        private void ExportPdf()
+        {
+            Guard(delegate
+            {
+                if (grid.Rows.Count == 0) LoadGrid();
+                bool saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Пенсионеры - текущая таблица", grid, false, "pensioners.pdf");
+                if (saved) ToastNotifier.Show(this, "PDF пенсионеров сохранен", true);
             });
         }
 
@@ -1460,14 +1764,14 @@ internal sealed class MainForm : GlassForm
         {
             Guard(delegate
             {
-                using (PensionerEditForm form = new PensionerEditForm(Db))
+                ShowChildPage(new PensionerEditForm(Db), delegate(bool accepted)
                 {
-                    if (form.ShowDialog(this) == DialogResult.OK)
+                    if (accepted)
                     {
                         LoadGrid();
                         ToastNotifier.Show(this, "Пенсионер добавлен. База обновлена", true);
                     }
-                }
+                });
             });
         }
 
@@ -1477,11 +1781,11 @@ internal sealed class MainForm : GlassForm
             {
                 if (grid.SelectedRows.Count == 0)
                 {
-                    MessageBox.Show("Выберите пенсионера для удаления.", "Удаление", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ToastNotifier.Show(this, "Выберите пенсионера для удаления.", false);
                     return;
                 }
                 int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
-                if (MessageBox.Show("Удалить выбранного пенсионера и все его путевки?", "Удаление", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+                if (!ConfirmInline("delete-pensioner-" + id, "Удалить выбранного пенсионера и все его путевки?")) return;
                 Db.Execute("DELETE FROM tblVoucherIssues WHERE PensionerID = ?", new OleDbParameter("pensioner", id));
                 Db.Execute("DELETE FROM tblPensioners WHERE PensionerID = ?", new OleDbParameter("pensioner", id));
                 LoadGrid();
@@ -1538,7 +1842,7 @@ internal sealed class MainForm : GlassForm
             panel.Controls.Add(load);
 
             Button preview = new GlassButton();
-            preview.Text = "Предпросмотр";
+            preview.Text = "PDF без открытия окон";
             preview.SetBounds(860, 84, 144, 38);
             preview.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             Theme.StyleButton(preview, false);
@@ -1586,8 +1890,8 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(region, Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
-                    FillLookup(status, Db.Lookup("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
+                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
                     LoadGrid();
                 });
             };
@@ -1628,8 +1932,7 @@ internal sealed class MainForm : GlassForm
                     "INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID ";
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY vi.IssueDate DESC, vi.VoucherNo";
-                grid.DataSource = Db.Query(sql, parameters.ToArray());
-                if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+                UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
             });
         }
 
@@ -1637,14 +1940,14 @@ internal sealed class MainForm : GlassForm
         {
             Guard(delegate
             {
-                using (VoucherEditForm form = new VoucherEditForm(Db))
+                ShowChildPage(new VoucherEditForm(Db), delegate(bool accepted)
                 {
-                    if (form.ShowDialog(this) == DialogResult.OK)
+                    if (accepted)
                     {
                         LoadGrid();
                         ToastNotifier.Show(this, "Путевка добавлена. База обновлена", true);
                     }
-                }
+                });
             });
         }
 
@@ -1654,11 +1957,11 @@ internal sealed class MainForm : GlassForm
             {
                 if (grid.SelectedRows.Count == 0)
                 {
-                    MessageBox.Show("Выберите путевку для удаления.", "Удаление", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ToastNotifier.Show(this, "Выберите путевку для удаления.", false);
                     return;
                 }
                 int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
-                if (MessageBox.Show("Удалить выбранную запись журнала?", "Удаление", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+                if (!ConfirmInline("delete-voucher-" + id, "Удалить выбранную запись журнала?")) return;
                 Db.Execute("DELETE FROM tblVoucherIssues WHERE IssueID = ?", new OleDbParameter("issue", id));
                 LoadGrid();
                 ToastNotifier.Show(this, "Запись журнала удалена. База обновлена", true);
@@ -1669,65 +1972,54 @@ internal sealed class MainForm : GlassForm
         {
             Guard(delegate
             {
-                using (PrintOptionsForm options = new PrintOptionsForm(preferPrint))
+                PrintOptionsForm options = new PrintOptionsForm(preferPrint);
+                ShowChildPage(options, delegate(bool accepted)
                 {
-                    if (options.ShowDialog(this) != DialogResult.OK) return;
-                    if (options.ExportPdf)
+                    if (!accepted) return;
+                    ApplyPrintOptions(options);
+                });
+            });
+        }
+
+        private void ApplyPrintOptions(PrintOptionsForm options)
+        {
+            Guard(delegate
+            {
+                if (options.Target == PrintTarget.AllTables)
+                {
+                    if (ReportTables.ExportAllTablesPdf(this, Db))
                     {
-                        bool saved = false;
-                        if (options.Target == PrintTarget.AccessJournal)
-                        {
-                            DataTable table = Db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
-                            saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Журнал регистрации выдачи путевок", "Система здравоохранения", table, "journal_vouchers.pdf");
-                        }
-                        else if (options.Target == PrintTarget.AccessRegionTotals)
-                        {
-                            DataTable table = Db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
-                            saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Итоги по санаториям и регионам", "Система здравоохранения", table, "region_totals.pdf");
-                        }
-                        else if (options.Target == PrintTarget.VisibleGrid)
-                        {
-                            saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Журнал путевок - видимые строки", grid, false, "visible_vouchers.pdf");
-                        }
-                        else if (options.Target == PrintTarget.SelectedGridRow)
-                        {
-                            if (grid.SelectedRows.Count == 0)
-                            {
-                                MessageBox.Show("Выберите строку журнала для PDF.", "PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                                return;
-                            }
-                            saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Журнал путевок - выбранная строка", grid, true, "selected_voucher.pdf");
-                        }
-                        if (saved) ToastNotifier.Show(this, "PDF-файл красиво собран и сохранен", true);
+                        ToastNotifier.Show(this, "PDF со всеми таблицами сохранен", true);
+                    }
+                    return;
+                }
+
+                bool saved = false;
+                if (options.Target == PrintTarget.AccessJournal)
+                {
+                    DataTable table = ReportTables.Vouchers(Db);
+                    saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Журнал регистрации выдачи путевок", "Система здравоохранения", table, "journal_vouchers.pdf");
+                }
+                else if (options.Target == PrintTarget.AccessRegionTotals)
+                {
+                    DataTable table = ReportTables.RegionTotals(Db);
+                    saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Итоги по санаториям и регионам", "Система здравоохранения", table, "region_totals.pdf");
+                }
+                else if (options.Target == PrintTarget.VisibleGrid)
+                {
+                    saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Журнал путевок - видимые строки", grid, false, "visible_vouchers.pdf");
+                }
+                else if (options.Target == PrintTarget.SelectedGridRow)
+                {
+                    if (grid.SelectedRows.Count == 0)
+                    {
+                        ToastNotifier.Show(this, "Выберите строку журнала для PDF.", false);
                         return;
                     }
-
-                    if (options.Target == PrintTarget.AccessJournal)
-                    {
-                        if (ReportRunner.OpenReport(Db.DatabasePath, "rptVoucherIssues", options.DirectPrint))
-                            ToastNotifier.Show(this, options.DirectPrint ? "Отчет журнала отправлен на печать" : "Открыт предпросмотр журнала", true);
-                    }
-                    else if (options.Target == PrintTarget.AccessRegionTotals)
-                    {
-                        if (ReportRunner.OpenReport(Db.DatabasePath, "rptRegionGroupedTotals", options.DirectPrint))
-                            ToastNotifier.Show(this, options.DirectPrint ? "Итоговый отчет отправлен на печать" : "Открыт предпросмотр итогов", true);
-                    }
-                    else if (options.Target == PrintTarget.VisibleGrid)
-                    {
-                        GridPrinter.PrintGrid("Журнал путевок - видимые строки", grid, false, options.DirectPrint);
-                        ToastNotifier.Show(this, options.DirectPrint ? "Видимые строки отправлены на печать" : "Открыт предпросмотр видимых строк", true);
-                    }
-                    else if (options.Target == PrintTarget.SelectedGridRow)
-                    {
-                        if (grid.SelectedRows.Count == 0)
-                        {
-                            MessageBox.Show("Выберите строку журнала для печати.", "Печать", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            return;
-                        }
-                        GridPrinter.PrintGrid("Журнал путевок - выбранная строка", grid, true, options.DirectPrint);
-                        ToastNotifier.Show(this, options.DirectPrint ? "Выбранная строка отправлена на печать" : "Открыт предпросмотр выбранной строки", true);
-                    }
+                    saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Журнал путевок - выбранная строка", grid, true, "selected_voucher.pdf");
                 }
+
+                if (saved) ToastNotifier.Show(this, "PDF-файл сохранен в папку документов", true);
             });
         }
     }
@@ -1773,6 +2065,14 @@ internal sealed class MainForm : GlassForm
             load.Click += delegate { LoadGrid(); };
             panel.Controls.Add(load);
 
+            Button exportPdf = new GlassButton();
+            exportPdf.Text = "PDF";
+            exportPdf.SetBounds(674, 84, 114, 38);
+            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            Theme.StyleButton(exportPdf, false);
+            exportPdf.Click += delegate { ExportPdf(); };
+            panel.Controls.Add(exportPdf);
+
             Button add = new GlassButton();
             add.Text = "Добавить";
             add.SetBounds(28, 520, 132, 40);
@@ -1806,7 +2106,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(profile, Db.Lookup("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
+                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
                     LoadGrid();
                 });
             };
@@ -1835,8 +2135,17 @@ internal sealed class MainForm : GlassForm
                     "INNER JOIN tblMedicalProfiles AS mp ON s.ProfileID = mp.ProfileID ";
                 if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where.ToArray()) + " ";
                 sql += "ORDER BY s.SanatoriumName";
-                grid.DataSource = Db.Query(sql, parameters.ToArray());
-                if (grid.Columns.Count > 0) grid.Columns[0].Visible = false;
+                UiPerformance.BindGrid(grid, Db.Query(sql, parameters.ToArray()));
+            });
+        }
+
+        private void ExportPdf()
+        {
+            Guard(delegate
+            {
+                if (grid.Rows.Count == 0) LoadGrid();
+                bool saved = ProfessionalPdfExporter.ExportGridWithDialog(this, "Санатории - текущая таблица", grid, false, "sanatoriums.pdf");
+                if (saved) ToastNotifier.Show(this, "PDF санаториев сохранен", true);
             });
         }
 
@@ -1844,14 +2153,14 @@ internal sealed class MainForm : GlassForm
         {
             Guard(delegate
             {
-                using (SanatoriumEditForm form = new SanatoriumEditForm(Db))
+                ShowChildPage(new SanatoriumEditForm(Db), delegate(bool accepted)
                 {
-                    if (form.ShowDialog(this) == DialogResult.OK)
+                    if (accepted)
                     {
                         LoadGrid();
                         ToastNotifier.Show(this, "Санаторий добавлен. База обновлена", true);
                     }
-                }
+                });
             });
         }
 
@@ -1861,11 +2170,11 @@ internal sealed class MainForm : GlassForm
             {
                 if (grid.SelectedRows.Count == 0)
                 {
-                    MessageBox.Show("Выберите санаторий для удаления.", "Удаление", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ToastNotifier.Show(this, "Выберите санаторий для удаления.", false);
                     return;
                 }
                 int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
-                if (MessageBox.Show("Удалить санаторий и связанные путевки?", "Удаление", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+                if (!ConfirmInline("delete-sanatorium-" + id, "Удалить санаторий и связанные путевки?")) return;
                 Db.Execute("DELETE FROM tblVoucherIssues WHERE SanatoriumID = ?", new OleDbParameter("sanatorium", id));
                 Db.Execute("DELETE FROM tblSanatoriums WHERE SanatoriumID = ?", new OleDbParameter("sanatorium", id));
                 LoadGrid();
@@ -2059,7 +2368,7 @@ internal abstract class RecordFormBase : GlassForm
         {
             if (string.IsNullOrWhiteSpace(box.Text))
             {
-                MessageBox.Show("Заполните обязательные поля.", "Проверка", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ToastNotifier.Show(this, "Заполните обязательные поля.", false);
                 box.Focus();
                 return false;
             }
@@ -2095,8 +2404,8 @@ internal abstract class RecordFormBase : GlassForm
 
         public PensionerEditForm(DbContext db) : base(db, "Добавление пенсионера", new Size(720, 690))
         {
-            region = AddLookup("Регион", Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
-            category = AddLookup("Категория", Db.Lookup("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
+            region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
+            category = AddLookup("Категория", Db.LookupCached("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
             last = AddText("Фамилия *", "", 330);
             first = AddText("Имя *", "", 330);
             middle = AddText("Отчество", "", 330);
@@ -2149,9 +2458,9 @@ internal abstract class RecordFormBase : GlassForm
         {
             number = AddText("Номер путевки *", "V-" + DateTime.Now.ToString("yyyyMMddHHmmss"), 300);
             pensioner = AddLookup("Пенсионер", Db.Query("SELECT PensionerID, LastName & ' ' & FirstName & ' (' & PensionCertificateNo & ')' AS FullName FROM tblPensioners ORDER BY LastName, FirstName"), "PensionerID", "FullName");
-            sanatorium = AddLookup("Санаторий", Db.Lookup("tblSanatoriums", "SanatoriumID", "SanatoriumName"), "SanatoriumID", "SanatoriumName");
-            funding = AddLookup("Источник", Db.Lookup("tblFundingSources", "FundingSourceID", "FundingSourceName"), "FundingSourceID", "FundingSourceName");
-            status = AddLookup("Статус", Db.Lookup("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName");
+            sanatorium = AddLookup("Санаторий", Db.LookupCached("tblSanatoriums", "SanatoriumID", "SanatoriumName"), "SanatoriumID", "SanatoriumName");
+            funding = AddLookup("Источник", Db.LookupCached("tblFundingSources", "FundingSourceID", "FundingSourceName"), "FundingSourceID", "FundingSourceName");
+            status = AddLookup("Статус", Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName");
             issueDate = AddDate("Дата регистрации", DateTime.Today);
             startDate = AddDate("Дата заезда", DateTime.Today.AddDays(14));
             endDate = AddDate("Дата выезда", DateTime.Today.AddDays(27));
@@ -2167,12 +2476,12 @@ internal abstract class RecordFormBase : GlassForm
                 if (!Require(number)) return;
                 if (SelectedId(pensioner) == 0 || SelectedId(sanatorium) == 0)
                 {
-                    MessageBox.Show("Нужны хотя бы один пенсионер и один санаторий.", "Проверка", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ToastNotifier.Show(this, "Нужны хотя бы один пенсионер и один санаторий.", false);
                     return;
                 }
                 if (endDate.Value.Date < startDate.Value.Date)
                 {
-                    MessageBox.Show("Дата выезда не может быть раньше даты заезда.", "Проверка", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ToastNotifier.Show(this, "Дата выезда не может быть раньше даты заезда.", false);
                     return;
                 }
                 Db.Execute("INSERT INTO tblVoucherIssues (IssueDate, VoucherNo, PensionerID, SanatoriumID, FundingSourceID, StatusID, StartDate, EndDate, CoPaymentPercent, Notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -2205,8 +2514,8 @@ internal abstract class RecordFormBase : GlassForm
 
         public SanatoriumEditForm(DbContext db) : base(db, "Добавление санатория", new Size(720, 600))
         {
-            region = AddLookup("Регион", Db.Lookup("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
-            profile = AddLookup("Профиль", Db.Lookup("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
+            region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
+            profile = AddLookup("Профиль", Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
             name = AddText("Санаторий *", "", 360);
             address = AddText("Адрес", "", 390);
             phone = AddText("Телефон", "", 240);
@@ -2337,7 +2646,7 @@ internal sealed class DataToolsForm : GlassForm
     {
         Guard(delegate
         {
-            if (MessageBox.Show("Удалить все записи журнала выдачи путевок?", "Очистка", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (!ConfirmInline("clear-journal", "Удалить все записи журнала выдачи путевок?")) return;
             Db.Execute("DELETE FROM tblVoucherIssues");
             RefreshStats();
             ToastNotifier.Show(this, "Журнал очищен. База обновлена", true);
@@ -2348,7 +2657,7 @@ internal sealed class DataToolsForm : GlassForm
     {
         Guard(delegate
         {
-            if (MessageBox.Show("Удалить пенсионеров и все связанные путевки?", "Очистка", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (!ConfirmInline("clear-pensioners", "Удалить пенсионеров и все связанные путевки?")) return;
             Db.Execute("DELETE FROM tblVoucherIssues");
             Db.Execute("DELETE FROM tblPensioners");
             RefreshStats();
@@ -2360,7 +2669,7 @@ internal sealed class DataToolsForm : GlassForm
     {
         Guard(delegate
         {
-            if (MessageBox.Show("Будут удалены ВСЕ записи кроме справочников. Продолжить?", "Полная очистка", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (!ConfirmInline("clear-all", "Будут удалены ВСЕ записи кроме справочников. Продолжить?")) return;
             Db.Execute("DELETE FROM tblVoucherIssues");
             Db.Execute("DELETE FROM tblPensioners");
             Db.Execute("DELETE FROM tblSanatoriums");
@@ -2371,12 +2680,62 @@ internal sealed class DataToolsForm : GlassForm
 }
 
 
+    internal static class ReportTables
+    {
+        public static bool ExportAllTablesPdf(IWin32Window owner, DbContext db)
+        {
+            List<ProfessionalPdfExporter.Section> sections = new List<ProfessionalPdfExporter.Section>();
+            AddSection(sections, "Пенсионеры", delegate { return Pensioners(db); });
+            AddSection(sections, "Журнал путевок", delegate { return Vouchers(db); });
+            AddSection(sections, "Санатории", delegate { return Sanatoriums(db); });
+            AddSection(sections, "Итоги по санаториям", delegate { return RegionTotals(db); });
+            return ProfessionalPdfExporter.ExportSectionsWithDialog(owner, "Сводный отчет по всем таблицам", sections, "all_healthcare_tables.pdf");
+        }
+
+        private static void AddSection(List<ProfessionalPdfExporter.Section> sections, string title, Func<DataTable> loader)
+        {
+            try
+            {
+                sections.Add(ProfessionalPdfExporter.Section.FromDataTable(title, loader()));
+            }
+            catch (Exception ex)
+            {
+                DataTable error = new DataTable();
+                error.Columns.Add("Раздел");
+                error.Columns.Add("Статус");
+                error.Rows.Add(title, "Не удалось загрузить: " + ex.Message);
+                sections.Add(ProfessionalPdfExporter.Section.FromDataTable(title, error));
+            }
+        }
+
+        public static DataTable Pensioners(DbContext db)
+        {
+            return db.Query("SELECT p.LastName AS [Фамилия], p.FirstName AS [Имя], p.MiddleName AS [Отчество], r.RegionName AS [Регион], c.CategoryName AS [Категория], p.BirthDate AS [Дата рождения], p.PensionCertificateNo AS [Удостоверение], p.Phone AS [Телефон] FROM (tblPensioners AS p INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) INNER JOIN tblPensionerCategories AS c ON p.CategoryID = c.CategoryID ORDER BY p.LastName, p.FirstName");
+        }
+
+        public static DataTable Vouchers(DbContext db)
+        {
+            return db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+        }
+
+        public static DataTable Sanatoriums(DbContext db)
+        {
+            return db.Query("SELECT s.SanatoriumName AS [Санаторий], r.RegionName AS [Регион], mp.ProfileName AS [Профиль], s.CapacityBeds AS [Коек], s.PricePerDay AS [Цена дня], s.Phone AS [Телефон], s.Address AS [Адрес], IIf(s.IsActive, 'Да', 'Нет') AS [Работает] FROM (tblSanatoriums AS s INNER JOIN tblRegions AS r ON s.RegionID = r.RegionID) INNER JOIN tblMedicalProfiles AS mp ON s.ProfileID = mp.ProfileID ORDER BY s.SanatoriumName");
+        }
+
+        public static DataTable RegionTotals(DbContext db)
+        {
+            return db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
+        }
+    }
+
     internal enum PrintTarget
     {
         AccessJournal,
         AccessRegionTotals,
         VisibleGrid,
-        SelectedGridRow
+        SelectedGridRow,
+        AllTables
     }
 
     
@@ -2438,6 +2797,7 @@ internal sealed class PrintOptionsForm : Form
         target.Items.Add(new PrintChoice(PrintTarget.AccessRegionTotals, "Отчет Access: итоги по регионам"));
         target.Items.Add(new PrintChoice(PrintTarget.VisibleGrid, "Текущая таблица: все видимые строки"));
         target.Items.Add(new PrintChoice(PrintTarget.SelectedGridRow, "Текущая таблица: выбранная строка"));
+        target.Items.Add(new PrintChoice(PrintTarget.AllTables, "PDF: все основные таблицы вместе"));
         target.SelectedIndex = 0;
         targetRow.Controls.Add(target, 1, 0);
 
@@ -2450,7 +2810,7 @@ internal sealed class PrintOptionsForm : Form
         root.Controls.Add(modes, 0, 2);
 
         preview = new RadioButton();
-        preview.Text = "Предпросмотр";
+        preview.Text = "PDF без открытия окон";
         preview.AutoSize = true;
         preview.Checked = !preferPrint;
         preview.BackColor = Color.Transparent;
@@ -2458,7 +2818,7 @@ internal sealed class PrintOptionsForm : Form
         modes.Controls.Add(preview);
 
         direct = new RadioButton();
-        direct.Text = "Печать сразу";
+        direct.Text = "Быстро сохранить PDF";
         direct.AutoSize = true;
         direct.Checked = preferPrint;
         direct.BackColor = Color.Transparent;
@@ -2466,13 +2826,13 @@ internal sealed class PrintOptionsForm : Form
         modes.Controls.Add(direct);
 
         pdf = new RadioButton();
-        pdf.Text = "Сохранить красивый PDF";
+        pdf.Text = "Красивый PDF";
         pdf.AutoSize = true;
         pdf.BackColor = Color.Transparent;
         pdf.ForeColor = Theme.Ink;
         modes.Controls.Add(pdf);
 
-        Label hint = Theme.Label("PDF собирается с аккуратной шапкой, таблицей, страницами и правильным порядком строк.", Theme.BaseFont, Theme.Muted);
+        Label hint = Theme.Label("Отчеты сохраняются в PDF автоматически внутри приложения: без системных диалогов, предпросмотров и отдельных окон.", Theme.BaseFont, Theme.Muted);
         hint.Margin = new Padding(0, 8, 0, 10);
         hint.MaximumSize = new Size(510, 0);
         root.Controls.Add(hint, 0, 3);
@@ -2490,6 +2850,7 @@ internal sealed class PrintOptionsForm : Form
         cancel.Text = "Отмена";
         cancel.SetBounds(0, 0, 90, 38);
         cancel.DialogResult = DialogResult.Cancel;
+        cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
         Theme.StyleButton(cancel, false);
         buttons.Controls.Add(cancel);
 
@@ -2497,6 +2858,7 @@ internal sealed class PrintOptionsForm : Form
         ok.Text = "Продолжить";
         ok.SetBounds(0, 0, 120, 38);
         ok.DialogResult = DialogResult.OK;
+        ok.Click += delegate { DialogResult = DialogResult.OK; Close(); };
         Theme.StyleButton(ok, true);
         buttons.Controls.Add(ok);
 
@@ -2583,7 +2945,6 @@ internal sealed class PrintOptionsForm : Form
             GridPrinter job = new GridPrinter(title, grid, selectedOnly);
             if (job.rows.Count == 0)
             {
-                MessageBox.Show("Нет строк для печати.", "Печать", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -2593,28 +2954,8 @@ internal sealed class PrintOptionsForm : Form
                 document.DefaultPageSettings.Landscape = true;
                 document.PrintPage += job.PrintPage;
 
-                if (directPrint)
-                {
-                    using (PrintDialog dialog = new PrintDialog())
-                    {
-                        dialog.Document = document;
-                        dialog.UseEXDialog = true;
-                        if (dialog.ShowDialog() == DialogResult.OK)
-                        {
-                            document.Print();
-                        }
-                    }
-                }
-                else
-                {
-                    using (PrintPreviewDialog preview = new PrintPreviewDialog())
-                    {
-                        preview.Document = document;
-                        preview.Width = 1100;
-                        preview.Height = 760;
-                        preview.ShowDialog();
-                    }
-                }
+                document.PrintController = new StandardPrintController();
+                document.Print();
             }
         }
 
@@ -2687,41 +3028,135 @@ internal sealed class PrintOptionsForm : Form
         private const int PagePixelWidth = PagePointWidth * Scale;
         private const int PagePixelHeight = PagePointHeight * Scale;
 
+        private static string BuildExportPath(string defaultFileName)
+        {
+            string safeName = string.IsNullOrWhiteSpace(defaultFileName) ? "report.pdf" : defaultFileName;
+            if (!safeName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) safeName += ".pdf";
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+            {
+                safeName = safeName.Replace(invalid, '_');
+            }
+
+            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HealthcareExports");
+            if (string.IsNullOrWhiteSpace(folder) || folder.StartsWith("HealthcareExports", StringComparison.OrdinalIgnoreCase))
+            {
+                folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HealthcareExports");
+            }
+            Directory.CreateDirectory(folder);
+
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string fileName = Path.GetFileNameWithoutExtension(safeName) + "_" + stamp + ".pdf";
+            return Path.Combine(folder, fileName);
+        }
+
+        private static void Notify(IWin32Window owner, string message, bool success)
+        {
+            ToastNotifier.Show(owner as Control, message, success);
+        }
+
+        public sealed class Section
+        {
+            private Section(string title, List<string> headers, List<string[]> rows)
+            {
+                Title = title;
+                Headers = headers;
+                Rows = rows;
+            }
+
+            public string Title { get; private set; }
+            public List<string> Headers { get; private set; }
+            public List<string[]> Rows { get; private set; }
+
+            public static Section FromDataTable(string title, DataTable table)
+            {
+                List<string> headers = new List<string>();
+                List<string[]> rows = new List<string[]>();
+                if (table != null)
+                {
+                    foreach (DataColumn column in table.Columns)
+                    {
+                        headers.Add(column.ColumnName);
+                    }
+
+                    foreach (DataRow row in table.Rows)
+                    {
+                        string[] values = new string[table.Columns.Count];
+                        for (int i = 0; i < table.Columns.Count; i++)
+                        {
+                            values[i] = FormatValue(row[i]);
+                        }
+                        rows.Add(values);
+                    }
+                }
+
+                if (headers.Count == 0)
+                {
+                    headers.Add("Статус");
+                }
+                if (rows.Count == 0)
+                {
+                    rows.Add(new string[] { "Нет данных" });
+                }
+                return new Section(title, headers, rows);
+            }
+        }
+
+        public static bool ExportSectionsWithDialog(IWin32Window owner, string title, List<Section> sections, string defaultFileName)
+        {
+            if (sections == null || sections.Count == 0)
+            {
+                Notify(owner, "Нет данных для PDF.", false);
+                return false;
+            }
+
+            List<byte[]> pages = new List<byte[]>();
+            foreach (Section section in sections)
+            {
+                if (section == null) continue;
+                pages.AddRange(RenderPages(title, section.Title, section.Headers, section.Rows));
+            }
+
+            if (pages.Count == 0)
+            {
+                Notify(owner, "Нет страниц для PDF.", false);
+                return false;
+            }
+
+            string path = BuildExportPath(defaultFileName);
+            WriteImagePdf(path, pages);
+            Notify(owner, "PDF сохранен:\n" + path, true);
+            return true;
+        }
+
         public static bool ExportDataTableWithDialog(IWin32Window owner, string title, string subtitle, DataTable table, string defaultFileName)
         {
             if (table == null || table.Rows.Count == 0)
             {
-                MessageBox.Show("Нет данных для PDF.", "PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Notify(owner, "Нет данных для PDF.", false);
                 return false;
             }
 
-            using (SaveFileDialog dialog = new SaveFileDialog())
+            List<string> headers = new List<string>();
+            foreach (DataColumn column in table.Columns)
             {
-                dialog.Filter = "PDF файл (*.pdf)|*.pdf";
-                dialog.FileName = defaultFileName;
-                dialog.Title = "Сохранить PDF";
-                if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
-
-                List<string> headers = new List<string>();
-                foreach (DataColumn column in table.Columns)
-                {
-                    headers.Add(column.ColumnName);
-                }
-
-                List<string[]> rows = new List<string[]>();
-                foreach (DataRow row in table.Rows)
-                {
-                    string[] values = new string[table.Columns.Count];
-                    for (int i = 0; i < table.Columns.Count; i++)
-                    {
-                        values[i] = FormatValue(row[i]);
-                    }
-                    rows.Add(values);
-                }
-
-                Export(dialog.FileName, title, subtitle, headers, rows);
-                return true;
+                headers.Add(column.ColumnName);
             }
+
+            List<string[]> rows = new List<string[]>();
+            foreach (DataRow row in table.Rows)
+            {
+                string[] values = new string[table.Columns.Count];
+                for (int i = 0; i < table.Columns.Count; i++)
+                {
+                    values[i] = FormatValue(row[i]);
+                }
+                rows.Add(values);
+            }
+
+            string path = BuildExportPath(defaultFileName);
+            Export(path, title, subtitle, headers, rows);
+            Notify(owner, "PDF сохранен:\n" + path, true);
+            return true;
         }
 
         public static void ExportDataTableToFile(string path, string title, string subtitle, DataTable table)
@@ -2756,7 +3191,7 @@ internal sealed class PrintOptionsForm : Form
             }
             if (columns.Count == 0)
             {
-                MessageBox.Show("Нет колонок для PDF.", "PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Notify(owner, "Нет колонок для PDF.", false);
                 return false;
             }
 
@@ -2781,19 +3216,14 @@ internal sealed class PrintOptionsForm : Form
 
             if (rows.Count == 0)
             {
-                MessageBox.Show("Нет строк для PDF.", "PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Notify(owner, "Нет строк для PDF.", false);
                 return false;
             }
 
-            using (SaveFileDialog dialog = new SaveFileDialog())
-            {
-                dialog.Filter = "PDF файл (*.pdf)|*.pdf";
-                dialog.FileName = defaultFileName;
-                dialog.Title = "Сохранить PDF";
-                if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
-                Export(dialog.FileName, title, "Система здравоохранения", headers, rows);
-                return true;
-            }
+            string path = BuildExportPath(defaultFileName);
+            Export(path, title, "Система здравоохранения", headers, rows);
+            Notify(owner, "PDF сохранен:\n" + path, true);
+            return true;
         }
 
         private static string FormatValue(object value)
@@ -2833,7 +3263,7 @@ internal sealed class PrintOptionsForm : Form
             int rowHeight = 48;
             int footerHeight = 82;
             int rowsPerPage = Math.Max(1, (PagePixelHeight - yStart - tableHeaderHeight - footerHeight - margin) / rowHeight);
-            int pageCount = (int)Math.Ceiling(rows.Count / (double)rowsPerPage);
+            int pageCount = Math.Max(1, (int)Math.Ceiling(rows.Count / (double)rowsPerPage));
             int rowIndex = 0;
 
             for (int page = 1; page <= pageCount; page++)
@@ -3158,128 +3588,61 @@ internal sealed class PrintOptionsForm : Form
 
     internal static class ToastNotifier
     {
-        private static readonly object SyncLock = new object();
-        private static readonly List<Form> OpenToasts = new List<Form>();
+        private static readonly Dictionary<Control, Panel> ActivePanels = new Dictionary<Control, Panel>();
 
         public static void Show(Control owner, string message, bool success)
         {
-            Form parent = owner == null ? null : owner.FindForm();
-            ToastForm toast = new ToastForm(message, success);
-            Rectangle bounds = parent == null ? Screen.PrimaryScreen.WorkingArea : parent.RectangleToScreen(parent.ClientRectangle);
-            toast.StartPosition = FormStartPosition.Manual;
+            Control host = owner == null ? null : owner.FindForm();
+            if (host == null) host = owner;
+            if (host == null) return;
 
-            lock (SyncLock)
+            Panel oldPanel;
+            if (ActivePanels.TryGetValue(host, out oldPanel) && oldPanel != null && !oldPanel.IsDisposed)
             {
-                toast.Location = new Point(bounds.Right - toast.Width - 24, bounds.Bottom - toast.Height - 32 - (OpenToasts.Count * (toast.Height + 12)));
-                OpenToasts.Add(toast);
+                host.Controls.Remove(oldPanel);
+                oldPanel.Dispose();
             }
 
-            toast.FormClosed += delegate
+            Panel panel = new Panel();
+            panel.Width = Math.Min(520, Math.Max(320, host.ClientSize.Width - 48));
+            panel.Height = message.IndexOf('\n') >= 0 ? 92 : 68;
+            panel.Left = Math.Max(12, host.ClientSize.Width - panel.Width - 24);
+            panel.Top = Math.Max(12, host.ClientSize.Height - panel.Height - 24);
+            panel.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            panel.BackColor = success ? (Theme.Dark ? Color.FromArgb(31, 64, 48) : Color.FromArgb(235, 250, 240)) :
+                                      (Theme.Dark ? Color.FromArgb(72, 52, 28) : Color.FromArgb(255, 246, 232));
+            panel.Padding = new Padding(14, 10, 14, 10);
+
+            Label label = new Label();
+            label.Dock = DockStyle.Fill;
+            label.BackColor = Color.Transparent;
+            label.ForeColor = Theme.Ink;
+            label.Font = Theme.BaseFont;
+            label.Text = (success ? "✓ " : "⚠ ") + message;
+            label.AutoEllipsis = true;
+            panel.Controls.Add(label);
+
+            host.Controls.Add(panel);
+            panel.BringToFront();
+            ActivePanels[host] = panel;
+
+            Timer timer = new Timer();
+            timer.Interval = 3800;
+            timer.Tick += delegate
             {
-                lock (SyncLock)
+                timer.Stop();
+                timer.Dispose();
+                if (!panel.IsDisposed)
                 {
-                    OpenToasts.Remove(toast);
+                    host.Controls.Remove(panel);
+                    panel.Dispose();
+                }
+                if (ActivePanels.ContainsKey(host) && ReferenceEquals(ActivePanels[host], panel))
+                {
+                    ActivePanels.Remove(host);
                 }
             };
-            toast.Show(parent);
-        }
-
-        private sealed class ToastForm : Form
-        {
-            private readonly string message;
-            private readonly bool success;
-            private readonly Timer timer;
-
-            public ToastForm(string message, bool success)
-            {
-                this.message = message;
-                this.success = success;
-                FormBorderStyle = FormBorderStyle.None;
-                ShowInTaskbar = false;
-                TopMost = false;
-                
-                int lineCount = message.Split(new[] { "\n" }, StringSplitOptions.None).Length;
-                Width = 420;
-                Height = 70 + (lineCount > 1 ? (lineCount - 1) * 18 : 0);
-                Height = Math.Min(Height, 150);
-                
-                BackColor = Color.FromArgb(250, 250, 252);
-                DoubleBuffered = true;
-                AutoScaleMode = AutoScaleMode.Dpi;
-
-                timer = new Timer();
-                timer.Interval = 3500;
-                timer.Tick += delegate
-                {
-                    timer.Stop();
-                    Close();
-                };
-            }
-
-            protected override void OnShown(EventArgs e)
-            {
-                base.OnShown(e);
-                timer.Start();
-            }
-
-            protected override void OnPaint(PaintEventArgs e)
-            {
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
-                Color accent = success ? Theme.Green : Color.FromArgb(255, 149, 0);
-                Color bgTop = success ? Color.FromArgb(245, 253, 245) : Color.FromArgb(255, 250, 245);
-                Color bgBottom = success ? Color.FromArgb(235, 248, 235) : Color.FromArgb(255, 245, 235);
-                
-                using (GraphicsPath path = Rounded(rect, 18))
-                using (LinearGradientBrush fill = new LinearGradientBrush(rect, Theme.Dark ? Color.FromArgb(235, 28, 36, 54) : bgTop, Theme.Dark ? Color.FromArgb(220, 18, 25, 40) : bgBottom, 90f))
-                using (Pen border = new Pen(accent, 1.5f))
-                using (SolidBrush accentBrush = new SolidBrush(accent))
-                using (SolidBrush textBrush = new SolidBrush(Theme.Ink))
-                using (Font titleFont = new Font("Segoe UI Semibold", 10f, FontStyle.Bold))
-                using (Font messageFont = new Font("Segoe UI", 9f, FontStyle.Regular))
-                {
-                    e.Graphics.FillPath(fill, path);
-                    e.Graphics.DrawPath(border, path);
-                    
-                    e.Graphics.FillEllipse(accentBrush, 18, 22, 18, 18);
-                    string icon = success ? "✓" : "⚠";
-                    using (SolidBrush iconBrush = new SolidBrush(Color.White))
-                    using (Font iconFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold))
-                    {
-                        e.Graphics.DrawString(icon, iconFont, iconBrush, new RectangleF(20, 23, 14, 16));
-                    }
-                    
-                    string[] lines = message.Split(new[] { "\n" }, StringSplitOptions.None);
-                    float textY = 20;
-                    
-                    if (lines.Length > 0)
-                    {
-                        e.Graphics.DrawString(lines[0], titleFont, textBrush, new RectangleF(48, textY, Width - 72, 18));
-                        textY += 22;
-                    }
-                    
-                    if (lines.Length > 1)
-                    {
-                        for (int i = 1; i < lines.Length && textY < Height - 10; i++)
-                        {
-                            e.Graphics.DrawString(lines[i], messageFont, new SolidBrush(Theme.Muted), new RectangleF(48, textY, Width - 72, 18));
-                            textY += 18;
-                        }
-                    }
-                }
-            }
-
-            private static GraphicsPath Rounded(Rectangle rectangle, int radius)
-            {
-                int diameter = radius * 2;
-                GraphicsPath path = new GraphicsPath();
-                path.AddArc(rectangle.X, rectangle.Y, diameter, diameter, 180, 90);
-                path.AddArc(rectangle.Right - diameter, rectangle.Y, diameter, diameter, 270, 90);
-                path.AddArc(rectangle.Right - diameter, rectangle.Bottom - diameter, diameter, diameter, 0, 90);
-                path.AddArc(rectangle.X, rectangle.Bottom - diameter, diameter, diameter, 90, 90);
-                path.CloseFigure();
-                return path;
-            }
+            timer.Start();
         }
     }
 
@@ -3287,35 +3650,7 @@ internal sealed class PrintOptionsForm : Form
     {
         public static string Show(string text, string caption)
         {
-            using (Form form = new Form())
-            using (Label label = new Label())
-            using (TextBox box = new TextBox())
-            using (Button ok = new GlassButton())
-            using (Button cancel = new GlassButton())
-            {
-                form.Text = caption;
-                form.FormBorderStyle = FormBorderStyle.FixedDialog;
-                form.StartPosition = FormStartPosition.CenterParent;
-                form.ClientSize = new Size(420, 140);
-                form.MinimizeBox = false;
-                form.MaximizeBox = false;
-                label.Text = text;
-                label.SetBounds(16, 16, 380, 24);
-                box.SetBounds(16, 48, 384, 26);
-                ok.Text = "OK";
-                ok.DialogResult = DialogResult.OK;
-                ok.SetBounds(220, 92, 84, 32);
-                cancel.Text = "Отмена";
-                cancel.DialogResult = DialogResult.Cancel;
-                cancel.SetBounds(316, 92, 84, 32);
-                form.Controls.Add(label);
-                form.Controls.Add(box);
-                form.Controls.Add(ok);
-                form.Controls.Add(cancel);
-                form.AcceptButton = ok;
-                form.CancelButton = cancel;
-                return form.ShowDialog() == DialogResult.OK ? box.Text : "";
-            }
+            return string.Empty;
         }
     }
 
@@ -3328,13 +3663,13 @@ internal sealed class PrintOptionsForm : Form
             {
                 if (!File.Exists(databasePath))
                 {
-                    MessageBox.Show("Файл базы данных не найден:\n" + databasePath, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    ErrorLogger.Log("Report database not found: " + databasePath);
                     return false;
                 }
                 Type type = Type.GetTypeFromProgID("Access.Application");
                 if (type == null)
                 {
-                    MessageBox.Show("Microsoft Access не найден. Отчет можно открыть вручную из базы данных.", "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    ErrorLogger.Log("Microsoft Access not found for report: " + reportName);
                     return false;
                 }
                 access = Activator.CreateInstance(type);
@@ -3355,7 +3690,7 @@ internal sealed class PrintOptionsForm : Form
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Не удалось открыть или напечатать отчет.\n\n" + ex.Message, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                ErrorLogger.LogException(ex);
                 if (access != null)
                 {
                     try { Marshal.ReleaseComObject(access); } catch { }
@@ -3376,59 +3711,242 @@ internal sealed class PrintOptionsForm : Form
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimumSize = new Size(400, 300);
 
+            TableLayoutPanel layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Fill;
+            layout.BackColor = Color.Transparent;
+            layout.ColumnCount = 1;
+            layout.RowCount = 2;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            Controls.Add(layout);
+
+            FlowLayoutPanel header = new FlowLayoutPanel();
+            header.Dock = DockStyle.Fill;
+            header.AutoSize = true;
+            header.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            header.FlowDirection = FlowDirection.LeftToRight;
+            header.WrapContents = false;
+            header.Padding = new Padding(0, 0, 0, 12);
+            layout.Controls.Add(header, 0, 0);
+
+            Button back = new GlassButton();
+            back.Text = "Назад";
+            back.SetBounds(0, 0, 118, 38);
+            Theme.StyleButton(back, false);
+            back.Click += delegate { Close(); };
+            header.Controls.Add(back);
+
+            Label caption = Theme.Label(Path.GetFileName(filePath), Theme.H2Font, Theme.Ink);
+            caption.Margin = new Padding(14, 6, 0, 0);
+            header.Controls.Add(caption);
+
+            if (filePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                WebBrowser browser = new WebBrowser();
+                browser.Dock = DockStyle.Fill;
+                browser.AllowWebBrowserDrop = false;
+                browser.IsWebBrowserContextMenuEnabled = true;
+                layout.Controls.Add(browser, 0, 1);
+                try
+                {
+                    browser.Navigate(new Uri(filePath));
+                }
+                catch (Exception ex)
+                {
+                    browser.DocumentText = "<html><body style='font-family:Segoe UI;padding:24px'>Не удалось открыть PDF внутри приложения: " +
+                                           System.Security.SecurityElement.Escape(ex.Message) + "</body></html>";
+                }
+                return;
+            }
+
             RichTextBox viewer = new RichTextBox();
             viewer.ReadOnly = true;
             viewer.Dock = DockStyle.Fill;
             viewer.BackColor = Color.White;
             viewer.ForeColor = Color.Black;
             viewer.Font = new Font("Segoe UI", 10f);
+            viewer.BorderStyle = BorderStyle.None;
+            layout.Controls.Add(viewer, 0, 1);
 
             try
             {
                 if (filePath.EndsWith(".rtf", StringComparison.OrdinalIgnoreCase))
                 {
-                    using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                    {
-                        viewer.LoadFile(stream, RichTextBoxStreamType.RichText);
-                    }
+                    LoadRtf(viewer, filePath);
                 }
                 else if (filePath.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
                 {
-                    Encoding[] encodings = { Encoding.UTF8, Encoding.GetEncoding(1251), Encoding.GetEncoding(1252) };
-                    string text = null;
-
-                    foreach (Encoding enc in encodings)
-                    {
-                        try
-                        {
-                            byte[] bytes = File.ReadAllBytes(filePath);
-                            text = enc.GetString(bytes);
-                            if (!string.IsNullOrEmpty(text) && text.Contains("РЎ") == false && text.Contains("\ufffd") == false)
-                            {
-                                break;
-                            }
-                        }
-                        catch { }
-                    }
-
-                    if (text == null)
-                    {
-                        text = File.ReadAllText(filePath, Encoding.UTF8);
-                    }
-
-                    if (text.StartsWith("\ufeff"))
-                    {
-                        text = text.Substring(1);
-                    }
-                    viewer.Text = text;
+                    viewer.Text = ReadTextDocument(filePath);
                 }
             }
             catch (Exception ex)
             {
                 viewer.Text = "Ошибка при загрузке файла: " + ex.Message;
             }
+        }
 
-            Controls.Add(viewer);
+        private static void LoadRtf(RichTextBox viewer, string filePath)
+        {
+            string rtf = ReadTextDocument(filePath);
+            if (!rtf.TrimStart().StartsWith("{\\rtf", StringComparison.OrdinalIgnoreCase))
+            {
+                viewer.Text = FixMojibake(rtf);
+                return;
+            }
+
+            string plainText = RtfToPlainText(rtf);
+            viewer.Text = FixMojibake(plainText);
+        }
+
+        private static string RtfToPlainText(string rtf)
+        {
+            int contentStart = rtf.IndexOf("\\pard", StringComparison.OrdinalIgnoreCase);
+            if (contentStart > 0) rtf = rtf.Substring(contentStart);
+
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < rtf.Length; i++)
+            {
+                char c = rtf[i];
+                if (c == '{' || c == '}') continue;
+                if (c != '\\')
+                {
+                    text.Append(c);
+                    continue;
+                }
+
+                if (i + 1 >= rtf.Length) break;
+                char next = rtf[++i];
+                if (next == '\\' || next == '{' || next == '}')
+                {
+                    text.Append(next);
+                    continue;
+                }
+
+                int wordStart = i;
+                while (i < rtf.Length && char.IsLetter(rtf[i])) i++;
+                string word = rtf.Substring(wordStart, i - wordStart);
+                bool negative = i < rtf.Length && rtf[i] == '-';
+                if (negative) i++;
+                int numberStart = i;
+                while (i < rtf.Length && char.IsDigit(rtf[i])) i++;
+                string number = rtf.Substring(numberStart, i - numberStart);
+                if (i < rtf.Length && rtf[i] == ' ')
+                {
+                }
+                else
+                {
+                    i--;
+                }
+
+                if (word == "par" || word == "line")
+                {
+                    text.Append(Environment.NewLine);
+                }
+                else if (word == "tab")
+                {
+                    text.Append('\t');
+                }
+                else if (word == "u" && number.Length > 0)
+                {
+                    int value;
+                    if (int.TryParse((negative ? "-" : "") + number, out value))
+                    {
+                        if (value < 0) value += 65536;
+                        text.Append((char)value);
+                        if (i + 1 < rtf.Length && rtf[i + 1] == '?') i++;
+                    }
+                }
+            }
+
+            string result = text.ToString();
+            while (result.Contains(Environment.NewLine + Environment.NewLine + Environment.NewLine))
+            {
+                result = result.Replace(Environment.NewLine + Environment.NewLine + Environment.NewLine, Environment.NewLine + Environment.NewLine);
+            }
+            return result.Trim();
+        }
+
+        private static string ReadTextDocument(string filePath)
+        {
+            byte[] bytes = File.ReadAllBytes(filePath);
+            Encoding[] encodings = { new UTF8Encoding(false, true), Encoding.GetEncoding(1251), Encoding.GetEncoding(1252), Encoding.UTF8 };
+            string best = null;
+
+            foreach (Encoding enc in encodings)
+            {
+                try
+                {
+                    string text = enc.GetString(bytes);
+                    if (best == null || ScoreText(text) > ScoreText(best)) best = text;
+                    if (!LooksBroken(text)) break;
+                }
+                catch
+                {
+                }
+            }
+
+            if (best == null) best = File.ReadAllText(filePath, Encoding.UTF8);
+            if (best.StartsWith("\ufeff")) best = best.Substring(1);
+            return best;
+        }
+
+        private static string FixMojibake(string text)
+        {
+            if (!LooksBroken(text)) return text;
+            try
+            {
+                byte[] bytes = Encoding.GetEncoding(1251).GetBytes(text);
+                string repaired = Encoding.UTF8.GetString(bytes);
+                if (!LooksBroken(repaired)) return repaired;
+            }
+            catch
+            {
+            }
+            return text;
+        }
+
+        private static bool LooksBroken(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text.IndexOf('�') >= 0 ||
+                   text.IndexOf("Ð", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf("РЎ", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf("Рђ", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf("СЃ", StringComparison.Ordinal) >= 0;
+        }
+
+        private static int ScoreText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            int score = 0;
+            foreach (char c in text)
+            {
+                if (c >= 'А' && c <= 'я') score += 2;
+                if (c == '�') score -= 8;
+            }
+            return score;
+        }
+
+        private static string EscapeUnicodeForLegacyRtf(string rtf)
+        {
+            StringBuilder builder = new StringBuilder(rtf.Length + 256);
+            foreach (char c in rtf)
+            {
+                if (c <= 127)
+                {
+                    builder.Append(c);
+                }
+                else
+                {
+                    int value = c;
+                    if (value > 32767) value -= 65536;
+                    builder.Append("\\u");
+                    builder.Append(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    builder.Append('?');
+                }
+            }
+            return builder.ToString();
         }
     }
 }
