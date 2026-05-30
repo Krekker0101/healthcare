@@ -7,9 +7,11 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Printing;
 using System.IO;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace HealthcareSanatoriumInterface
 {
@@ -48,7 +50,7 @@ namespace HealthcareSanatoriumInterface
                 {
                     DbContext testDb = new DbContext(dbPath);
                     if (!testDb.Exists()) Environment.Exit(2);
-                    DataTable table = ReportTables.Vouchers(testDb);
+                    DataTable table = testDb.Query(ReportSql.SelectVoucherIssuesDetailed("TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость]", "IssueDate, VoucherNo"));
                     string testPdf = Path.Combine(baseDir, "pdf-self-test.pdf");
                     ProfessionalPdfExporter.ExportDataTableToFile(testPdf, "Тестовый PDF-отчет", "Система здравоохранения", table);
                     FileInfo info = new FileInfo(testPdf);
@@ -68,17 +70,16 @@ namespace HealthcareSanatoriumInterface
 
     internal static class Theme
     {
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
 
         public static bool Dark = false;
-        public static Color Ink { get { return Dark ? Color.FromArgb(232, 238, 248) : Color.FromArgb(24, 31, 44); } }
-        public static Color Muted { get { return Dark ? Color.FromArgb(164, 176, 196) : Color.FromArgb(91, 107, 129); } }
-        public static Color Line { get { return Dark ? Color.FromArgb(64, 78, 105) : Color.FromArgb(207, 216, 230); } }
-        public static Color Surface { get { return Dark ? Color.FromArgb(20, 27, 42) : Color.White; } }
-        public static Color Field { get { return Dark ? Color.FromArgb(28, 37, 56) : Color.White; } }
-        public static Color Blue { get { return Dark ? Color.FromArgb(74, 144, 255) : Color.FromArgb(0, 122, 255); } }
-        public static Color Green { get { return Dark ? Color.FromArgb(61, 220, 132) : Color.FromArgb(52, 199, 89); } }
+        public static Color Ink { get { return SystemColors.ControlText; } }
+        public static Color Muted { get { return SystemColors.GrayText; } }
+        public static Color Line { get { return SystemColors.ControlDark; } }
+        public static Color Panel { get { return SystemColors.Control; } }
+        public static Color Surface { get { return SystemColors.Window; } }
+        public static Color Field { get { return SystemColors.Window; } }
+        public static Color Blue { get { return SystemColors.Highlight; } }
+        public static Color Green { get { return SystemColors.Highlight; } }
         public static readonly Font BaseFont = new Font("Segoe UI", 10f, FontStyle.Regular);
         public static readonly Font TitleFont = new Font("Segoe UI Semibold", 21f, FontStyle.Bold);
         public static readonly Font H2Font = new Font("Segoe UI Semibold", 14f, FontStyle.Bold);
@@ -98,21 +99,16 @@ namespace HealthcareSanatoriumInterface
                 glass.Primary = primary;
                 glass.Large = button.Height >= 58 || button.Text.IndexOf('\n') >= 0;
             }
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = primary ? 0 : 1;
-            button.FlatAppearance.BorderColor = Line;
-            button.FlatAppearance.MouseOverBackColor = Dark ? Color.FromArgb(38, 52, 78) : Color.FromArgb(238, 246, 255);
-            button.FlatAppearance.MouseDownBackColor = Dark ? Color.FromArgb(24, 34, 54) : Color.FromArgb(219, 236, 255);
-            button.UseVisualStyleBackColor = false;
-            button.BackColor = glass == null ? (primary ? Blue : Surface) : Color.Transparent;
-            button.ForeColor = primary ? Color.White : Ink;
+            button.FlatStyle = FlatStyle.System;
+            button.UseVisualStyleBackColor = true;
+            button.BackColor = SystemColors.Control;
+            button.ForeColor = SystemColors.ControlText;
             button.Font = ButtonFont;
             button.Margin = Padding.Empty;
             button.AutoEllipsis = true;
             if (button.Height < 36) button.Height = 36;
-            button.Cursor = Cursors.Hand;
+            button.Cursor = Cursors.Default;
             button.TabStop = true;
-            button.Invalidate();
         }
 
         public static Label Label(string text, Font font, Color color)
@@ -121,7 +117,7 @@ namespace HealthcareSanatoriumInterface
             label.Text = text;
             label.Font = font;
             label.ForeColor = color;
-            label.BackColor = Color.Transparent;
+            label.BackColor = SystemColors.Control;
             label.AutoSize = true;
             return label;
         }
@@ -150,20 +146,20 @@ namespace HealthcareSanatoriumInterface
             grid.ColumnHeadersHeight = 34;
             grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
             grid.ShowCellToolTips = false;
-            grid.BackgroundColor = Surface;
-            grid.BorderStyle = BorderStyle.None;
-            grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Dark ? Color.FromArgb(35, 46, 68) : Color.FromArgb(246, 248, 252);
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = Ink;
+            grid.BackgroundColor = SystemColors.Window;
+            grid.BorderStyle = BorderStyle.Fixed3D;
+            grid.EnableHeadersVisualStyles = true;
+            grid.ColumnHeadersDefaultCellStyle.BackColor = SystemColors.Control;
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = SystemColors.ControlText;
             grid.ColumnHeadersDefaultCellStyle.Font = GridHeaderFont;
             grid.DefaultCellStyle.Font = GridCellFont;
-            grid.DefaultCellStyle.BackColor = Surface;
-            grid.DefaultCellStyle.ForeColor = Ink;
-            grid.DefaultCellStyle.SelectionBackColor = Dark ? Color.FromArgb(50, 76, 116) : Color.FromArgb(224, 239, 255);
-            grid.DefaultCellStyle.SelectionForeColor = Ink;
-            grid.AlternatingRowsDefaultCellStyle.BackColor = Dark ? Color.FromArgb(24, 33, 50) : Color.FromArgb(250, 252, 255);
+            grid.DefaultCellStyle.BackColor = SystemColors.Window;
+            grid.DefaultCellStyle.ForeColor = SystemColors.WindowText;
+            grid.DefaultCellStyle.SelectionBackColor = SystemColors.Highlight;
+            grid.DefaultCellStyle.SelectionForeColor = SystemColors.HighlightText;
+            grid.AlternatingRowsDefaultCellStyle.BackColor = SystemColors.Window;
             grid.RowHeadersVisible = false;
-            grid.GridColor = Dark ? Color.FromArgb(54, 66, 88) : Color.FromArgb(230, 235, 244);
+            grid.GridColor = SystemColors.ControlDark;
             grid.Dock = DockStyle.Fill;
             try
             {
@@ -176,7 +172,7 @@ namespace HealthcareSanatoriumInterface
         {
             if (root == null) return;
             root.Font = BaseFont;
-            if (!(root is GlassPanel)) root.BackColor = root is Form ? (Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249)) : root.BackColor;
+            if (!(root is GlassPanel)) root.BackColor = root is Form ? SystemColors.Control : root.BackColor;
             foreach (Control control in root.Controls)
             {
                 if (control is Button)
@@ -193,11 +189,6 @@ namespace HealthcareSanatoriumInterface
                 {
                     control.BackColor = Field;
                     control.ForeColor = Ink;
-                    string ph = control.Tag as string;
-                    if (!string.IsNullOrEmpty(ph))
-                    {
-                        try { SendMessage(control.Handle, 0x1501u, IntPtr.Zero, ph); } catch { }
-                    }
                 }
                 else if (control is ComboBox)
                 {
@@ -214,12 +205,12 @@ namespace HealthcareSanatoriumInterface
                 else if (control is CheckBox)
                 {
                     control.ForeColor = Ink;
-                    control.BackColor = Color.Transparent;
+                    control.BackColor = SystemColors.Control;
                     control.Font = BaseFont;
                 }
                 else if (control is Label)
                 {
-                    control.BackColor = Color.Transparent;
+                    control.BackColor = SystemColors.Control;
                     control.ForeColor = control.Font.Bold ? Ink : Muted;
                 }
                 ApplyTo(control);
@@ -261,7 +252,6 @@ internal static class ErrorLogger
 internal static class Debouncer
 {
     private static readonly Dictionary<string, System.Windows.Forms.Timer> Timers = new Dictionary<string, System.Windows.Forms.Timer>();
-    private static readonly int MaxTimersCached = 16;
 
     public static void Debounce(string key, System.Action action, int delayMs = 300)
     {
@@ -270,13 +260,8 @@ internal static class Debouncer
         {
             existing.Stop();
             existing.Dispose();
+            Timers.Remove(key);
         }
-
-        if (Timers.Count > MaxTimersCached)
-        {
-            Timers.Clear();
-        }
-
         System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         timer.Interval = delayMs;
         timer.Tick += delegate
@@ -360,13 +345,93 @@ public static class UiPerformance
         }
     }
 }
+
+internal static class AppLog
+{
+    private static readonly object Sync = new object();
+
+    public static string LogPath
+    {
+        get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "healthcare-reports.log"); }
+    }
+
+    public static void Info(string message)
+    {
+        Write("INFO", message, null);
+    }
+
+    public static void Error(string message, Exception ex)
+    {
+        Write("ERROR", message, ex);
+    }
+
+    private static void Write(string level, string message, Exception ex)
+    {
+        try
+        {
+            lock (Sync)
+            {
+                StringBuilder line = new StringBuilder();
+                line.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+                line.Append(" [").Append(level).Append("] ").Append(message);
+                if (ex != null)
+                {
+                    line.Append(Environment.NewLine).Append(ex);
+                }
+                line.Append(Environment.NewLine);
+                File.AppendAllText(LogPath, line.ToString(), Encoding.UTF8);
+            }
+        }
+        catch
+        {
+        }
+    }
+}
+
+
+internal static class ReportSql
+{
+    public const string VoucherIssuesDetailed =
+        "SELECT vi.VoucherNo, vi.IssueDate, " +
+        "p.LastName & ' ' & p.FirstName & IIf(IsNull(p.MiddleName) Or p.MiddleName='', '', ' ' & p.MiddleName) AS PensionerFullName, " +
+        "r.RegionName AS PensionerRegion, sr.RegionName AS SanatoriumRegion, s.SanatoriumName, vi.StartDate, vi.EndDate, " +
+        "DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1 AS DaysCount, " +
+        "(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay] AS TotalCost, " +
+        "vs.StatusName, vi.CoPaymentPercent, vi.Notes " +
+        "FROM ((((tblVoucherIssues AS vi INNER JOIN tblPensioners AS p ON vi.PensionerID = p.PensionerID) " +
+        "INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) " +
+        "INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) " +
+        "INNER JOIN tblRegions AS sr ON s.RegionID = sr.RegionID) " +
+        "INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID";
+
+    public const string TotalsBySanatorium =
+        "SELECT d.SanatoriumRegion, d.SanatoriumName, Count(*) AS VoucherCount, " +
+        "Sum(d.DaysCount) AS TotalDays, Sum(d.TotalCost) AS TotalPlannedCost " +
+        "FROM (" + VoucherIssuesDetailed + ") AS d " +
+        "GROUP BY d.SanatoriumRegion, d.SanatoriumName";
+
+    public static string SelectVoucherIssuesDetailed(string fields, string orderBy)
+    {
+        return "SELECT " + fields + " FROM (" + VoucherIssuesDetailed + ") AS q" + AppendOrder(orderBy);
+    }
+
+    public static string SelectTotalsBySanatorium(string fields, string orderBy)
+    {
+        return "SELECT " + fields + " FROM (" + TotalsBySanatorium + ") AS q" + AppendOrder(orderBy);
+    }
+
+    private static string AppendOrder(string orderBy)
+    {
+        return string.IsNullOrWhiteSpace(orderBy) ? string.Empty : " ORDER BY " + orderBy;
+    }
+}
+
 public sealed class DbContext
 {
     private static readonly string[] AccdbProviders = new[] { "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0", "Microsoft.Jet.OLEDB.4.0" };
     private static readonly string[] MdbProviders = new[] { "Microsoft.Jet.OLEDB.4.0", "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0" };
     private string resolvedProvider;
     private string lastProviderError;
-    private string cachedConnectionString;
     private readonly object syncRoot = new object();
     private readonly Dictionary<string, DataTable> lookupCache = new Dictionary<string, DataTable>();
     private readonly object cacheLock = new object();
@@ -390,7 +455,6 @@ public sealed class DbContext
             DatabasePath = path;
             resolvedProvider = null;
             lastProviderError = null;
-            cachedConnectionString = null;
             ClearLookupCache();
         }
     }
@@ -480,22 +544,13 @@ public sealed class DbContext
             throw new FileNotFoundException("Файл базы данных не найден", DatabasePath);
         }
 
-        string connectionString;
-        lock (syncRoot)
+        string provider = ResolveProvider();
+        if (string.IsNullOrWhiteSpace(provider))
         {
-            if (cachedConnectionString == null)
-            {
-                string provider = ResolveProvider();
-                if (string.IsNullOrWhiteSpace(provider))
-                {
-                    throw new InvalidOperationException(BuildProviderError());
-                }
-                cachedConnectionString = BuildConnectionString(provider);
-            }
-            connectionString = cachedConnectionString;
+            throw new InvalidOperationException(BuildProviderError());
         }
 
-        OleDbConnection connection = new OleDbConnection(connectionString);
+        OleDbConnection connection = new OleDbConnection(BuildConnectionString(provider));
         try
         {
             connection.Open();
@@ -504,7 +559,7 @@ public sealed class DbContext
         catch (Exception ex)
         {
             connection.Dispose();
-            throw new InvalidOperationException(BuildConnectionError("", ex), ex);
+            throw new InvalidOperationException(BuildConnectionError(provider, ex), ex);
         }
     }
 
@@ -546,6 +601,7 @@ public sealed class DbContext
             {
                 resolvedProvider = provider;
                 lastProviderError = null;
+                AppLog.Info("OLE DB provider selected for " + DatabasePath + ": " + provider);
                 return resolvedProvider;
             }
 
@@ -575,22 +631,25 @@ public sealed class DbContext
         }
         catch (Exception ex)
         {
-            failure = ex.Message;
+            failure = provider + ": " + ex.Message;
+            AppLog.Info("OLE DB provider check failed: " + failure);
             return false;
         }
     }
 
     private string BuildProviderError()
     {
+        string details = string.IsNullOrWhiteSpace(lastProviderError) ? string.Empty : "\n\nТехнические сведения: " + lastProviderError;
         return "Ошибка подключения к базе данных. Проверьте:\n" +
                "1. Файл БД не поврежден\n" +
                "2. БД не открыта в другом приложении\n" +
-               "3. Права доступа к папке";
+               "3. Права доступа к папке" + details;
     }
 
     private string BuildConnectionError(string provider, Exception ex)
     {
-        return "Не удалось открыть БД: " + ex.Message;
+        AppLog.Error("Ошибка открытия базы через провайдер " + provider + ": " + DatabasePath, ex);
+        return "Не удалось открыть БД через " + provider + ": " + ex.Message;
     }
 
     private string[] GetProviderCandidates()
@@ -602,6 +661,49 @@ public sealed class DbContext
         }
 
         return AccdbProviders;
+    }
+
+    public void EnsureReportQueriesCompatible()
+    {
+        if (!Exists()) return;
+
+        try
+        {
+            AppLog.Info("Проверка совместимости сохраненных Access-запросов для отчетов: " + Path.GetFullPath(DatabasePath));
+            ReplaceSavedQuery("qryReport_VoucherIssuesDetailed", ReportSql.VoucherIssuesDetailed);
+            ReplaceSavedQuery("qry02_Calculated_VoucherCostAndAge", ReportSql.VoucherIssuesDetailed);
+            ReplaceSavedQuery("qry01_Selection_ActiveVoucherIssues", ReportSql.VoucherIssuesDetailed + " WHERE vs.StatusName <> 'Отменена'");
+            ReplaceSavedQuery("qry04_Totals_BySanatorium", ReportSql.TotalsBySanatorium);
+            AppLog.Info("Проверка сохраненных Access-запросов завершена.");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Не удалось автоматически обновить сохраненные Access-запросы. Работа приложения продолжится с встроенными SQL-запросами без Nz().", ex);
+        }
+    }
+
+    private void ReplaceSavedQuery(string queryName, string selectSql)
+    {
+        string safeName = "[" + queryName.Replace("]", "]]" ) + "]";
+        try
+        {
+            Execute("DROP VIEW " + safeName);
+            AppLog.Info("Удален устаревший сохраненный запрос " + queryName + ".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info("Сохраненный запрос " + queryName + " не был удален перед обновлением: " + ex.Message);
+        }
+
+        try
+        {
+            Execute("CREATE VIEW " + safeName + " AS " + selectSql);
+            AppLog.Info("Создан совместимый сохраненный запрос " + queryName + ".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Не удалось создать сохраненный запрос " + queryName + ".", ex);
+        }
     }
 }
 
@@ -628,15 +730,13 @@ public class GlassForm : Form
 {
     protected readonly DbContext Db;
     private Bitmap backgroundCache;
-    private Size backgroundCacheSize;
-    private bool backgroundCacheDark;
 
     protected GlassForm(DbContext db)
     {
         Db = db;
         Font = Theme.BaseFont;
         Icon = TryLoadAppIcon();
-        BackColor = Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249);
+        BackColor = SystemColors.Control;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
         DoubleBuffered = true;
@@ -652,21 +752,7 @@ public class GlassForm : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
-
-        if (backgroundCache == null || backgroundCacheSize != ClientSize || backgroundCacheDark != Theme.Dark)
-        {
-            ResetBackgroundCache();
-            backgroundCache = new Bitmap(ClientSize.Width, ClientSize.Height);
-            backgroundCacheSize = ClientSize;
-            backgroundCacheDark = Theme.Dark;
-            using (Graphics graphics = Graphics.FromImage(backgroundCache))
-            {
-                PaintCachedBackground(graphics);
-            }
-        }
-
-        e.Graphics.DrawImageUnscaled(backgroundCache, Point.Empty);
+        e.Graphics.Clear(BackColor);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -682,17 +768,11 @@ public class GlassForm : Form
             backgroundCache.Dispose();
             backgroundCache = null;
         }
-        backgroundCacheSize = Size.Empty;
     }
 
     private void PaintCachedBackground(Graphics graphics)
     {
-        // Simplified background: single solid fill for performance and stability
-        Rectangle bounds = new Rectangle(Point.Empty, ClientSize);
-        using (SolidBrush brush = new SolidBrush(Theme.Surface))
-        {
-            graphics.FillRectangle(brush, bounds);
-        }
+        graphics.Clear(BackColor);
     }
 
     protected static Icon TryLoadAppIcon()
@@ -737,7 +817,7 @@ public class GlassForm : Form
     {
         TableLayoutPanel t = new TableLayoutPanel();
         t.Dock = DockStyle.Fill;
-        t.BackColor = Color.Transparent;
+        t.BackColor = SystemColors.Control;
         t.ColumnCount = 1;
         t.RowCount = 4;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -752,7 +832,7 @@ public class GlassForm : Form
     {
         TableLayoutPanel h = new TableLayoutPanel();
         h.Dock = DockStyle.Fill;
-        h.BackColor = Color.Transparent;
+        h.BackColor = SystemColors.Control;
         h.ColumnCount = 2;
         h.RowCount = 1;
         h.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -769,7 +849,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.LeftToRight;
         f.WrapContents = false;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         f.Anchor = AnchorStyles.Right | AnchorStyles.Top;
         return f;
     }
@@ -782,7 +862,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.LeftToRight;
         f.WrapContents = true;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         f.Margin = new Padding(0, 0, 0, 8);
         return f;
     }
@@ -791,7 +871,7 @@ public class GlassForm : Form
     {
         TableLayoutPanel t = new TableLayoutPanel();
         t.Dock = DockStyle.Fill;
-        t.BackColor = Color.Transparent;
+        t.BackColor = SystemColors.Control;
         t.ColumnCount = 2;
         t.RowCount = 1;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -807,7 +887,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.LeftToRight;
         f.WrapContents = false;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         return f;
     }
 
@@ -818,7 +898,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.RightToLeft;
         f.WrapContents = false;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         f.Anchor = AnchorStyles.Right | AnchorStyles.Top;
         return f;
     }
@@ -866,7 +946,7 @@ public class GlassForm : Form
         try
         {
             SuspendLayout();
-            BackColor = Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249);
+            BackColor = SystemColors.Control;
             ResetBackgroundCache();
             Theme.ApplyTo(this);
             UiPerformance.Optimize(this);
@@ -886,38 +966,16 @@ public class GlassForm : Form
         {
             DoubleBuffered = true;
             Padding = new Padding(22);
-            BackColor = Color.Transparent;
+            BackColor = SystemColors.Control;
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle shadowRect = new Rectangle(10, 14, Width - 22, Height - 24);
-            Rectangle rect = new Rectangle(6, 4, Width - 13, Height - 12);
-            using (GraphicsPath shadow = Rounded(shadowRect, 24))
-            using (SolidBrush shadowBrush = new SolidBrush(Theme.Dark ? Color.FromArgb(90, 0, 0, 0) : Color.FromArgb(32, 78, 108, 150)))
+            using (Pen border = new Pen(SystemColors.ControlDark))
             {
-                e.Graphics.FillPath(shadowBrush, shadow);
-            }
-            using (GraphicsPath path = Rounded(rect, 22))
-            using (LinearGradientBrush fill = new LinearGradientBrush(rect, Theme.Dark ? Color.FromArgb(215, 30, 40, 62) : Color.FromArgb(230, 255, 255, 255), Theme.Dark ? Color.FromArgb(150, 18, 27, 45) : Color.FromArgb(180, 244, 248, 255), 90f))
-            using (Pen border = new Pen(Theme.Dark ? Color.FromArgb(90, 120, 150, 190) : Color.FromArgb(170, 255, 255, 255), 1f))
-            {
-                e.Graphics.FillPath(fill, path);
-                using (LinearGradientBrush sheen = new LinearGradientBrush(new Rectangle(rect.X, rect.Y, rect.Width, Math.Max(24, rect.Height / 3)), Theme.Dark ? Color.FromArgb(42, 255, 255, 255) : Color.FromArgb(150, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
-                {
-                    e.Graphics.FillPath(sheen, path);
-                }
-                using (Pen inner = new Pen(Theme.Dark ? Color.FromArgb(55, 255, 255, 255) : Color.FromArgb(120, 255, 255, 255), 1f))
-                {
-                    Rectangle innerRect = new Rectangle(rect.X + 1, rect.Y + 1, rect.Width - 2, rect.Height - 2);
-                    using (GraphicsPath innerPath = Rounded(innerRect, 20))
-                    {
-                        e.Graphics.DrawPath(inner, innerPath);
-                    }
-                }
-                e.Graphics.DrawPath(border, path);
+                Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+                e.Graphics.DrawRectangle(border, rect);
             }
         }
 
@@ -941,10 +999,10 @@ public class GlassForm : Form
 
         public GlassButton()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
-            BackColor = Color.Transparent;
-            FlatStyle = FlatStyle.Flat;
-            FlatAppearance.BorderSize = 0;
+            SetStyle(ControlStyles.UserPaint, false);
+            BackColor = SystemColors.Control;
+            FlatStyle = FlatStyle.System;
+            UseVisualStyleBackColor = true;
         }
 
         public bool Primary { get; set; }
@@ -981,73 +1039,15 @@ public class GlassForm : Form
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color clearColor = Parent == null || Parent.BackColor.A < 255 ? (Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249)) : Parent.BackColor;
-            e.Graphics.Clear(clearColor);
-            Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
-            int radius = Math.Max(10, Math.Min(16, Height / 3));
-            if (pressed) rect.Offset(0, 1);
-
-            Color top;
-            Color bottom;
-            Color border;
-            Color text;
-            Color shineTop;
-            if (Primary)
+            if (hot || pressed)
             {
-                top = hot ? Color.FromArgb(242, 39, 137, 248) : Color.FromArgb(235, 18, 122, 234);
-                bottom = hot ? Color.FromArgb(235, 6, 102, 214) : Color.FromArgb(224, 0, 91, 198);
-                border = Color.FromArgb(150, 115, 179, 250);
-                text = Color.White;
-                shineTop = Color.FromArgb(58, 255, 255, 255);
-            }
-         else if (Theme.Dark)
-            {
-                top = hot ? Color.FromArgb(230, 50, 65, 90) : Color.FromArgb(210, 40, 55, 80);
-                bottom = hot ? Color.FromArgb(195, 35, 48, 70) : Color.FromArgb(175, 28, 38, 60);
-                border = Color.FromArgb(128, 110, 130, 160);
-                text = Theme.Ink;
-                shineTop = Color.FromArgb(42, 255, 255, 255);
+                FlatAppearance.BorderColor = SystemColors.Highlight;
             }
             else
             {
-                top = hot ? Color.FromArgb(248, 250, 255, 255) : Color.FromArgb(242, 245, 252, 255);
-                bottom = hot ? Color.FromArgb(235, 242, 250, 255) : Color.FromArgb(228, 238, 248, 255);
-                border = Color.FromArgb(195, 205, 220, 235);
-                text = Theme.Ink;
-                shineTop = Color.FromArgb(90, 255, 255, 255);
+                FlatAppearance.BorderColor = SystemColors.ControlDark;
             }
-
-            Rectangle shadowRect = new Rectangle(rect.X, rect.Y + 2, rect.Width, rect.Height);
-            using (GraphicsPath shadowPath = Rounded(shadowRect, radius))
-            using (SolidBrush shadow = new SolidBrush(Theme.Dark ? Color.FromArgb(36, 0, 0, 0) : Color.FromArgb(14, 80, 104, 145)))
-            {
-                e.Graphics.FillPath(shadow, shadowPath);
-            }
-
-            using (GraphicsPath path = Rounded(rect, radius))
-            using (LinearGradientBrush fill = new LinearGradientBrush(rect, top, bottom, 90f))
-            using (Pen pen = new Pen(border, 1f))
-            {
-                e.Graphics.FillPath(fill, path);
-                Rectangle shineRect = new Rectangle(rect.X + 2, rect.Y + 2, rect.Width - 4, Math.Max(8, rect.Height / 3));
-                using (GraphicsPath shinePath = Rounded(shineRect, Math.Max(8, radius - 3)))
-                using (LinearGradientBrush shine = new LinearGradientBrush(shineRect, shineTop, Color.FromArgb(0, 255, 255, 255), 90f))
-                {
-                    e.Graphics.FillPath(shine, shinePath);
-                }
-                using (Pen inner = new Pen(Theme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(92, 255, 255, 255), 1f))
-                {
-                    Rectangle innerRect = new Rectangle(rect.X + 1, rect.Y + 1, rect.Width - 2, rect.Height - 2);
-                    using (GraphicsPath innerPath = Rounded(innerRect, Math.Max(8, radius - 1)))
-                    {
-                        e.Graphics.DrawPath(inner, innerPath);
-                    }
-                }
-                e.Graphics.DrawPath(pen, path);
-            }
-
-            DrawCaption(e.Graphics, rect, text);
+            base.OnPaint(e);
         }
 
         private void DrawCaption(Graphics g, Rectangle rect, Color textColor)
@@ -1120,7 +1120,7 @@ internal sealed class MainForm : GlassForm
         root.Dock = DockStyle.Fill;
         root.ColumnCount = 2;
         root.RowCount = 1;
-        root.BackColor = Color.Transparent;
+        root.BackColor = SystemColors.Control;
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330f));
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         Controls.Add(root);
@@ -1139,7 +1139,7 @@ internal sealed class MainForm : GlassForm
 
         TableLayoutPanel sidebarLayout = new TableLayoutPanel();
         sidebarLayout.Dock = DockStyle.Fill;
-        sidebarLayout.BackColor = Color.Transparent;
+        sidebarLayout.BackColor = SystemColors.Control;
         sidebarLayout.ColumnCount = 1;
         sidebarLayout.RowCount = 4;
         sidebarLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -1161,14 +1161,14 @@ internal sealed class MainForm : GlassForm
         Panel navHost = new Panel();
         navHost.Dock = DockStyle.Fill;
         navHost.AutoScroll = true;
-        navHost.BackColor = Color.Transparent;
+        navHost.BackColor = SystemColors.Control;
         sidebarLayout.Controls.Add(navHost, 0, 2);
 
         navLayout = new TableLayoutPanel();
         navLayout.Dock = DockStyle.Top;
         navLayout.AutoSize = true;
         navLayout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        navLayout.BackColor = Color.Transparent;
+        navLayout.BackColor = SystemColors.Control;
         navLayout.ColumnCount = 1;
         navLayout.RowCount = 0;
         navLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -1179,7 +1179,7 @@ internal sealed class MainForm : GlassForm
         sidebarActions.AutoSize = true;
         sidebarActions.ColumnCount = 1;
         sidebarActions.RowCount = 2;
-        sidebarActions.BackColor = Color.Transparent;
+        sidebarActions.BackColor = SystemColors.Control;
         sidebarActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         sidebarActions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebarActions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -1206,7 +1206,7 @@ internal sealed class MainForm : GlassForm
 
         homeLayout = new TableLayoutPanel();
         homeLayout.Dock = DockStyle.Fill;
-        homeLayout.BackColor = Color.Transparent;
+        homeLayout.BackColor = SystemColors.Control;
         homeLayout.ColumnCount = 1;
         homeLayout.RowCount = 5;
         homeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -1232,7 +1232,7 @@ internal sealed class MainForm : GlassForm
 
         Panel spacer = new Panel();
         spacer.Dock = DockStyle.Fill;
-        spacer.BackColor = Color.Transparent;
+        spacer.BackColor = SystemColors.Control;
         homeLayout.Controls.Add(spacer, 0, 3);
 
         manualBar = new FlowLayoutPanel();
@@ -1270,7 +1270,8 @@ internal sealed class MainForm : GlassForm
 
         Button allPdf = new GlassButton();
         allPdf.Text = "PDF: все таблицы";
-        allPdf.Size = new Size(162, 40);        Theme.StyleButton(allPdf, true);
+        allPdf.Size = new Size(162, 40);
+        Theme.StyleButton(allPdf, true);
         allPdf.Click += delegate { ExportAllTablesPdf(); };
         manualBar.Controls.Add(allPdf);
 
@@ -1311,7 +1312,7 @@ internal sealed class MainForm : GlassForm
         });
 
         SelectNavButton("Пенсионеры");
-        Load += delegate { RefreshStats(); };
+        Load += delegate { Db.EnsureReportQueriesCompatible(); RefreshStats(); };
     }
 
     private void AddNavButton(string title, string subtitle, EventHandler click)
@@ -1359,19 +1360,10 @@ internal sealed class MainForm : GlassForm
     {
         Guard(delegate
         {
-            DataTable dt = Db.Query(
-                "SELECT " +
-                "(SELECT Count(*) FROM tblPensioners) AS pensioners, " +
-                "(SELECT Count(*) FROM tblVoucherIssues) AS vouchers, " +
-                "(SELECT Count(*) FROM tblSanatoriums) AS sanatoriums");
-
-            if (dt.Rows.Count > 0)
-            {
-                int pensioners = Convert.ToInt32(dt.Rows[0]["pensioners"]);
-                int vouchers = Convert.ToInt32(dt.Rows[0]["vouchers"]);
-                int sanatoriums = Convert.ToInt32(dt.Rows[0]["sanatoriums"]);
-                stats.Text = pensioners + " пенсионеров  ·  " + vouchers + " путевок  ·  " + sanatoriums + " санаториев";
-            }
+            int pensioners = Db.ScalarInt("SELECT Count(*) FROM tblPensioners");
+            int vouchers = Db.ScalarInt("SELECT Count(*) FROM tblVoucherIssues");
+            int sanatoriums = Db.ScalarInt("SELECT Count(*) FROM tblSanatoriums");
+            stats.Text = pensioners + " пенсионеров  ·  " + vouchers + " путевок  ·  " + sanatoriums + " санаториев";
         });
     }
 
@@ -1468,6 +1460,7 @@ internal sealed class MainForm : GlassForm
             if (dialog.ShowDialog(this) == DialogResult.OK)
             {
                 Db.SetDatabasePath(dialog.FileName);
+                Db.EnsureReportQueriesCompatible();
                 RefreshStats();
                 ToastNotifier.Show(this, "База подключена и данные обновлены", true);
             }
@@ -1516,11 +1509,12 @@ internal sealed class MainForm : GlassForm
             onlyWithVouchers = new CheckBox();
             onlyWithVouchers.Text = "Только с путевками";
             onlyWithVouchers.AutoSize = true;
-            onlyWithVouchers.BackColor = Color.Transparent;
+            onlyWithVouchers.BackColor = SystemColors.Control;
             onlyWithVouchers.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(search);
             filters.Controls.Add(region);
             filters.Controls.Add(onlyWithVouchers);
+
             // Grid
             grid = new DataGridView();
             grid.Margin = new Padding(0, 0, 0, 10);
@@ -1550,7 +1544,8 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");                    LoadGrid();
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
+                    LoadGrid();
                 });
             };
             search.TextChanged += delegate { Debouncer.Debounce("pensioners_search", LoadGrid, 350); };
@@ -1582,7 +1577,7 @@ internal sealed class MainForm : GlassForm
                 }
                 if (onlyWithVouchers.Checked)
                 {
-                    where.Add("EXISTS (SELECT 1 FROM tblVoucherIssues AS vi WHERE vi.PensionerID = p.PensionerID)");
+                    where.Add("EXISTS (SELECT * FROM tblVoucherIssues AS vi WHERE vi.PensionerID = p.PensionerID)");
                 }
                 string sql =
                     "SELECT p.PensionerID AS [Код], p.LastName AS [Фамилия], p.FirstName AS [Имя], p.MiddleName AS [Отчество], " +
@@ -1701,7 +1696,7 @@ internal sealed class MainForm : GlassForm
             hideCanceled.Text = "Скрыть отмененные";
             hideCanceled.Checked = true;
             hideCanceled.AutoSize = true;
-            hideCanceled.BackColor = Color.Transparent;
+            hideCanceled.BackColor = SystemColors.Control;
             hideCanceled.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(region); filters.Controls.Add(status); filters.Controls.Add(hideCanceled);
 
@@ -1735,7 +1730,8 @@ internal sealed class MainForm : GlassForm
                 Guard(delegate
                 {
                     FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
-                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true, "Статус: все");                    LoadGrid();
+                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true, "Статус: все");
+                    LoadGrid();
                 });
             };
             region.SelectedIndexChanged += delegate { Debouncer.Debounce("vouchers_region", LoadGrid, 200); };
@@ -1856,12 +1852,12 @@ internal sealed class MainForm : GlassForm
                         bool saved = false;
                         if (options.Target == PrintTarget.AccessJournal)
                         {
-                            DataTable table = ReportTables.Vouchers(Db);
+                            DataTable table = Db.Query(ReportSql.SelectVoucherIssuesDetailed("VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус]", "IssueDate, VoucherNo"));
                             saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Журнал регистрации выдачи путевок", "Система здравоохранения", table, "journal_vouchers.pdf");
                         }
                         else if (options.Target == PrintTarget.AccessRegionTotals)
                         {
-                            DataTable table = ReportTables.RegionTotals(Db);
+                            DataTable table = Db.Query(ReportSql.SelectTotalsBySanatorium("SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость]", "SanatoriumRegion, SanatoriumName"));
                             saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Итоги по санаториям и регионам", "Система здравоохранения", table, "region_totals.pdf");
                         }
                         else if (options.Target == PrintTarget.VisibleGrid)
@@ -1948,9 +1944,10 @@ internal sealed class MainForm : GlassForm
             onlyActive.Text = "Только работающие";
             onlyActive.Checked = true;
             onlyActive.AutoSize = true;
-            onlyActive.BackColor = Color.Transparent;
+            onlyActive.BackColor = SystemColors.Control;
             onlyActive.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(profile); filters.Controls.Add(onlyActive);
+
             // Grid
             grid = new DataGridView();
             grid.Margin = new Padding(0, 0, 0, 10);
@@ -1980,7 +1977,8 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true, "Профиль: все");                    LoadGrid();
+                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true, "Профиль: все");
+                    LoadGrid();
                 });
             };
             profile.SelectedIndexChanged += delegate { Debouncer.Debounce("sanatoriums_profile", LoadGrid, 200); };
@@ -2105,7 +2103,7 @@ internal abstract class RecordFormBase : GlassForm
         root.Dock = DockStyle.Fill;
         root.ColumnCount = 1;
         root.RowCount = 3;
-        root.BackColor = Color.Transparent;
+        root.BackColor = SystemColors.Control;
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -2120,7 +2118,7 @@ internal abstract class RecordFormBase : GlassForm
         fieldLayout.Dock = DockStyle.Fill;
         fieldLayout.AutoSize = true;
         fieldLayout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        fieldLayout.BackColor = Color.Transparent;
+        fieldLayout.BackColor = SystemColors.Control;
         fieldLayout.ColumnCount = 2;
         fieldLayout.RowCount = 0;
         fieldLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200f));
@@ -2220,7 +2218,7 @@ internal abstract class RecordFormBase : GlassForm
         check.Text = text;
         check.Checked = value;
         check.AutoSize = true;
-        check.BackColor = Color.Transparent;
+        check.BackColor = SystemColors.Control;
         check.Margin = new Padding(0, 8, 0, 4);
         fieldLayout.RowCount = rowIndex + 1;
         fieldLayout.Controls.Add(check, 0, rowIndex);
@@ -2547,7 +2545,8 @@ internal abstract class RecordFormBase : GlassForm
         public SanatoriumEditForm(DbContext db, int editId = 0)
             : base(db, editId == 0 ? "Добавление санатория" : "Редактирование санатория", new Size(720, 600))
         {
-region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
+            this.editId = editId;
+            region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             profile = AddLookup("Профиль", Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
             name = AddText("Санаторий *", "", 360);
             address = AddText("Адрес", "", 390);
@@ -2643,7 +2642,7 @@ internal sealed class DataToolsForm : GlassForm
 
         TableLayoutPanel layout = new TableLayoutPanel();
         layout.Dock = DockStyle.Fill;
-        layout.BackColor = Color.Transparent;
+        layout.BackColor = SystemColors.Control;
         layout.ColumnCount = 1;
         layout.RowCount = 5;
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -2792,9 +2791,7 @@ internal sealed class DataToolsForm : GlassForm
 
         public static DataTable Vouchers(DbContext db)
         {
-            // Use direct SQL from tables instead of relying on a saved Access query object (qryReport_VoucherIssuesDetailed)
-            // This avoids errors when the saved query is missing or requires parameters.
-            return db.Query("SELECT vi.VoucherNo AS [Путевка], vi.IssueDate AS [Регистрация], p.LastName & ' ' & p.FirstName AS [Пенсионер], r.RegionName AS [Регион], s.SanatoriumName AS [Санаторий], vi.StartDate AS [Заезд], vi.EndDate AS [Выезд], DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1 AS [Дней], (DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay] AS [Стоимость], vs.StatusName AS [Статус] FROM (((tblVoucherIssues AS vi INNER JOIN tblPensioners AS p ON vi.PensionerID = p.PensionerID) INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID ORDER BY vi.IssueDate, vi.VoucherNo");
+            return db.Query(ReportSql.SelectVoucherIssuesDetailed("VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус]", "IssueDate, VoucherNo"));
         }
 
         public static DataTable Sanatoriums(DbContext db)
@@ -2804,8 +2801,7 @@ internal sealed class DataToolsForm : GlassForm
 
         public static DataTable RegionTotals(DbContext db)
         {
-            // Compute totals per sanatorium directly from tables to avoid dependency on saved queries in Access.
-            return db.Query("SELECT r.RegionName AS [Регион санатория], s.SanatoriumName AS [Санаторий], COUNT(vi.IssueID) AS [Путевок], NZ(SUM(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1),0) AS [Дней], NZ(SUM((DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay]),0) AS [Плановая стоимость] FROM (tblVoucherIssues AS vi INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) INNER JOIN tblRegions AS r ON s.RegionID = r.RegionID GROUP BY r.RegionName, s.SanatoriumName ORDER BY r.RegionName, s.SanatoriumName");
+            return db.Query(ReportSql.SelectTotalsBySanatorium("SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость]", "SanatoriumRegion, SanatoriumName"));
         }
     }
 
@@ -2841,7 +2837,7 @@ internal sealed class PrintOptionsForm : Form
 
         TableLayoutPanel root = new TableLayoutPanel();
         root.Dock = DockStyle.Fill;
-        root.BackColor = Color.Transparent;
+        root.BackColor = SystemColors.Control;
         root.ColumnCount = 1;
         root.RowCount = 5;
         root.Padding = new Padding(24);
@@ -2893,7 +2889,7 @@ internal sealed class PrintOptionsForm : Form
         preview.Text = "Предпросмотр";
         preview.AutoSize = true;
         preview.Checked = !preferPrint;
-        preview.BackColor = Color.Transparent;
+        preview.BackColor = SystemColors.Control;
         preview.ForeColor = Theme.Ink;
         modes.Controls.Add(preview);
 
@@ -2901,14 +2897,14 @@ internal sealed class PrintOptionsForm : Form
         direct.Text = "Печать сразу";
         direct.AutoSize = true;
         direct.Checked = preferPrint;
-        direct.BackColor = Color.Transparent;
+        direct.BackColor = SystemColors.Control;
         direct.ForeColor = Theme.Ink;
         modes.Controls.Add(direct);
 
         pdf = new RadioButton();
         pdf.Text = "Сохранить красивый PDF";
         pdf.AutoSize = true;
-        pdf.BackColor = Color.Transparent;
+        pdf.BackColor = SystemColors.Control;
         pdf.ForeColor = Theme.Ink;
         modes.Controls.Add(pdf);
 
@@ -3202,8 +3198,17 @@ internal sealed class PrintOptionsForm : Form
                     return false;
                 }
 
-                WriteImagePdf(dialog.FileName, pages);
-                return true;
+                try
+                {
+                    WriteImagePdf(dialog.FileName, pages);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Ошибка экспорта разделов в PDF: " + dialog.FileName, ex);
+                    MessageBox.Show("PDF-файл не создан.\n\nПуть: " + dialog.FileName + "\nПричина: " + ex.Message + "\n\nПодробности записаны в: " + AppLog.LogPath, "PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
         }
 
@@ -3239,8 +3244,17 @@ internal sealed class PrintOptionsForm : Form
                     rows.Add(values);
                 }
 
-                Export(dialog.FileName, title, subtitle, headers, rows);
-                return true;
+                try
+                {
+                    Export(dialog.FileName, title, subtitle, headers, rows);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Ошибка экспорта DataTable в PDF: " + dialog.FileName, ex);
+                    MessageBox.Show("PDF-файл не создан.\n\nПуть: " + dialog.FileName + "\nПричина: " + ex.Message + "\n\nПодробности записаны в: " + AppLog.LogPath, "PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
         }
 
@@ -3311,8 +3325,17 @@ internal sealed class PrintOptionsForm : Form
                 dialog.FileName = defaultFileName;
                 dialog.Title = "Сохранить PDF";
                 if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
-                Export(dialog.FileName, title, "Система здравоохранения", headers, rows);
-                return true;
+                try
+                {
+                    Export(dialog.FileName, title, "Система здравоохранения", headers, rows);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Ошибка экспорта таблицы в PDF: " + dialog.FileName, ex);
+                    MessageBox.Show("PDF-файл не создан.\n\nПуть: " + dialog.FileName + "\nПричина: " + ex.Message + "\n\nПодробности записаны в: " + AppLog.LogPath, "PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
         }
 
@@ -3510,6 +3533,36 @@ internal sealed class PrintOptionsForm : Form
 
         private static void WriteImagePdf(string path, List<byte[]> pageImages)
         {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentException("Путь к PDF-файлу не задан.");
+            }
+
+            if (pageImages == null || pageImages.Count == 0)
+            {
+                throw new InvalidOperationException("Нет подготовленных страниц для записи PDF.");
+            }
+
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                directory = AppDomain.CurrentDomain.BaseDirectory;
+                fullPath = Path.Combine(directory, Path.GetFileName(fullPath));
+            }
+
+            Directory.CreateDirectory(directory);
+            string probe = Path.Combine(directory, ".pdf-write-test-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
+            {
+                File.WriteAllText(probe, "test", Encoding.ASCII);
+                File.Delete(probe);
+            }
+            catch (Exception ex)
+            {
+                throw new UnauthorizedAccessException("Нет прав на запись PDF в папку: " + directory, ex);
+            }
+
             using (MemoryStream pdf = new MemoryStream())
             {
                 WriteAscii(pdf, "%PDF-1.4\n");
@@ -3570,7 +3623,35 @@ internal sealed class PrintOptionsForm : Form
                     WriteAscii(pdf, offset.ToString("0000000000") + " 00000 n \n");
                 }
                 WriteAscii(pdf, "trailer\n<< /Size " + (objectCount + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF");
-                File.WriteAllBytes(path, pdf.ToArray());
+                byte[] bytes = pdf.ToArray();
+                string tempPath = Path.Combine(directory, Path.GetFileName(fullPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+                try
+                {
+                    File.WriteAllBytes(tempPath, bytes);
+                    FileInfo tempInfo = new FileInfo(tempPath);
+                    if (!tempInfo.Exists || tempInfo.Length != bytes.Length)
+                    {
+                        throw new IOException("Временный PDF-файл не был записан полностью: " + tempPath);
+                    }
+
+                    if (File.Exists(fullPath))
+                    {
+                        File.Delete(fullPath);
+                    }
+                    File.Move(tempPath, fullPath);
+
+                    FileInfo finalInfo = new FileInfo(fullPath);
+                    if (!finalInfo.Exists || finalInfo.Length < 100)
+                    {
+                        throw new IOException("Итоговый PDF-файл отсутствует или пуст: " + fullPath);
+                    }
+                    AppLog.Info("PDF создан: " + fullPath + " (" + finalInfo.Length + " байт).");
+                }
+                catch
+                {
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                    throw;
+                }
             }
         }
 
@@ -3604,7 +3685,7 @@ internal sealed class PrintOptionsForm : Form
                 return 2;
             }
 
-            DataTable table = ReportTables.Vouchers(testDb);
+            DataTable table = testDb.Query(ReportSql.SelectVoucherIssuesDetailed("TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость]", "IssueDate, VoucherNo"));
             string testPdf = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pdf-self-test.pdf");
             ProfessionalPdfExporter.ExportDataTableToFile(testPdf, "Тестовый PDF-отчет", "Система здравоохранения", table);
 
@@ -3737,47 +3818,30 @@ internal sealed class PrintOptionsForm : Form
 
             protected override void OnPaint(PaintEventArgs e)
             {
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
-                Color accent = success ? Theme.Green : Color.FromArgb(255, 149, 0);
-                Color bgTop = success ? Color.FromArgb(245, 253, 245) : Color.FromArgb(255, 250, 245);
-                Color bgBottom = success ? Color.FromArgb(235, 248, 235) : Color.FromArgb(255, 245, 235);
-                
-                using (GraphicsPath path = Rounded(rect, 18))
-                using (LinearGradientBrush fill = new LinearGradientBrush(rect, Theme.Dark ? Color.FromArgb(235, 28, 36, 54) : bgTop, Theme.Dark ? Color.FromArgb(220, 18, 25, 40) : bgBottom, 90f))
-                using (Pen border = new Pen(accent, 1.5f))
-                using (SolidBrush accentBrush = new SolidBrush(accent))
-                using (SolidBrush textBrush = new SolidBrush(Theme.Ink))
+                Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+                Color accent = success ? SystemColors.Highlight : SystemColors.ControlDarkDark;
+                using (SolidBrush background = new SolidBrush(SystemColors.Info))
+                using (Pen border = new Pen(accent))
+                using (SolidBrush textBrush = new SolidBrush(SystemColors.InfoText))
+                using (SolidBrush mutedBrush = new SolidBrush(SystemColors.GrayText))
                 using (Font titleFont = new Font("Segoe UI Semibold", 10f, FontStyle.Bold))
                 using (Font messageFont = new Font("Segoe UI", 9f, FontStyle.Regular))
                 {
-                    e.Graphics.FillPath(fill, path);
-                    e.Graphics.DrawPath(border, path);
-                    
-                    e.Graphics.FillEllipse(accentBrush, 18, 22, 18, 18);
-                    string icon = success ? "✓" : "⚠";
-                    using (SolidBrush iconBrush = new SolidBrush(Color.White))
-                    using (Font iconFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold))
-                    {
-                        e.Graphics.DrawString(icon, iconFont, iconBrush, new RectangleF(20, 23, 14, 16));
-                    }
-                    
+                    e.Graphics.FillRectangle(background, rect);
+                    e.Graphics.DrawRectangle(border, rect);
+
                     string[] lines = message.Split(new[] { "\n" }, StringSplitOptions.None);
-                    float textY = 20;
-                    
+                    float textY = 14;
                     if (lines.Length > 0)
                     {
-                        e.Graphics.DrawString(lines[0], titleFont, textBrush, new RectangleF(48, textY, Width - 72, 18));
+                        e.Graphics.DrawString(lines[0], titleFont, textBrush, new RectangleF(16, textY, Width - 32, 18));
                         textY += 22;
                     }
-                    
-                    if (lines.Length > 1)
+
+                    for (int i = 1; i < lines.Length && textY < Height - 10; i++)
                     {
-                        for (int i = 1; i < lines.Length && textY < Height - 10; i++)
-                        {
-                            e.Graphics.DrawString(lines[i], messageFont, new SolidBrush(Theme.Muted), new RectangleF(48, textY, Width - 72, 18));
-                            textY += 18;
-                        }
+                        e.Graphics.DrawString(lines[i], messageFont, mutedBrush, new RectangleF(16, textY, Width - 32, 18));
+                        textY += 18;
                     }
                 }
             }
@@ -3798,25 +3862,68 @@ internal sealed class PrintOptionsForm : Form
 
     internal static class ReportRunner
     {
+        private sealed class AccessInstall
+        {
+            public string ProgId;
+            public string ExePath;
+            public string Source;
+            public RegistryView View;
+        }
+
         public static bool OpenReport(string databasePath, string reportName, bool print)
         {
             object access = null;
+            string fullPath = null;
             try
             {
-                if (!File.Exists(databasePath))
+                if (string.IsNullOrWhiteSpace(databasePath))
                 {
-                    MessageBox.Show("Файл базы данных не найден:\n" + databasePath, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Путь к базе данных не задан.", "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppLog.Info("Отчет не открыт: путь к базе данных пустой.");
                     return false;
                 }
-                Type type = Type.GetTypeFromProgID("Access.Application");
+
+                fullPath = Path.GetFullPath(databasePath);
+                if (!File.Exists(fullPath))
+                {
+                    MessageBox.Show("Файл базы данных не найден:\n" + fullPath, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppLog.Info("Отчет не открыт: файл базы не найден: " + fullPath);
+                    return false;
+                }
+
+                AccessInstall install = FindAccessInstallation();
+                Type type = ResolveAccessComType(install);
                 if (type == null)
                 {
-                    MessageBox.Show("Microsoft Access не найден. Отчет можно открыть вручную из базы данных.", "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppLog.Info("COM-сервер Access.Application не найден. " + DescribeInstall(install));
+                    if (install != null && !string.IsNullOrWhiteSpace(install.ExePath) && File.Exists(install.ExePath))
+                    {
+                        StartAccessDatabase(install.ExePath, fullPath);
+                        MessageBox.Show(
+                            "Microsoft Access найден, но COM-автоматизация отчетов недоступна.\n" +
+                            "База открыта в Access. Откройте отчет вручную: " + reportName + "\n\n" +
+                            "Подробности: " + AppLog.LogPath,
+                            "Отчет",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        return true;
+                    }
+
+                    MessageBox.Show(
+                        "Microsoft Access не установлен или не зарегистрирован для автоматического открытия отчетов.\n" +
+                        "Ложный запуск отчета не выполнялся. Подробности записаны в:\n" + AppLog.LogPath,
+                        "Отчет",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
                     return false;
                 }
+
+                AppLog.Info("Открытие отчета " + reportName + " из базы " + fullPath + ". " + DescribeInstall(install));
                 access = Activator.CreateInstance(type);
                 type.InvokeMember("Visible", System.Reflection.BindingFlags.SetProperty, null, access, new object[] { true });
-                type.InvokeMember("OpenCurrentDatabase", System.Reflection.BindingFlags.InvokeMethod, null, access, new object[] { databasePath });
+                type.InvokeMember("OpenCurrentDatabase", System.Reflection.BindingFlags.InvokeMethod, null, access, new object[] { fullPath, false });
+                VerifyCurrentDatabase(type, access, fullPath);
+
                 object doCmd = type.InvokeMember("DoCmd", System.Reflection.BindingFlags.GetProperty, null, access, null);
                 Type doCmdType = doCmd.GetType();
                 int view = print ? 0 : 2;
@@ -3827,18 +3934,182 @@ internal sealed class PrintOptionsForm : Form
                     type.InvokeMember("CloseCurrentDatabase", System.Reflection.BindingFlags.InvokeMethod, null, access, null);
                     type.InvokeMember("Quit", System.Reflection.BindingFlags.InvokeMethod, null, access, null);
                     Marshal.ReleaseComObject(access);
+                    access = null;
                 }
+                AppLog.Info("Отчет успешно открыт: " + reportName + ".");
                 return true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Не удалось открыть или напечатать отчет.\n\n" + ex.Message, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                AppLog.Error("Не удалось открыть или напечатать отчет " + reportName + " из базы " + (fullPath ?? databasePath) + ".", ex);
+                MessageBox.Show(
+                    "Не удалось открыть или напечатать отчет.\n\n" +
+                    "База: " + (fullPath ?? databasePath) + "\n" +
+                    "Отчет: " + reportName + "\n" +
+                    "Причина: " + ex.Message + "\n\n" +
+                    "Подробности записаны в: " + AppLog.LogPath,
+                    "Отчет",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Exclamation);
+                return false;
+            }
+            finally
+            {
                 if (access != null)
                 {
                     try { Marshal.ReleaseComObject(access); } catch { }
                 }
-                return false;
             }
+        }
+
+        private static Type ResolveAccessComType(AccessInstall install)
+        {
+            Type type = Type.GetTypeFromProgID("Access.Application");
+            if (type != null) return type;
+            if (install != null && !string.IsNullOrWhiteSpace(install.ProgId))
+            {
+                try { return Type.GetTypeFromProgID(install.ProgId); } catch { }
+            }
+            return null;
+        }
+
+        private static void VerifyCurrentDatabase(Type accessType, object access, string expectedPath)
+        {
+            try
+            {
+                object currentProject = accessType.InvokeMember("CurrentProject", System.Reflection.BindingFlags.GetProperty, null, access, null);
+                string actualPath = Convert.ToString(currentProject.GetType().InvokeMember("FullName", System.Reflection.BindingFlags.GetProperty, null, currentProject, null));
+                if (!string.Equals(Path.GetFullPath(actualPath), Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Access открыл другую базу данных: " + actualPath);
+                }
+                AppLog.Info("Access подтвердил текущую базу: " + actualPath);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Не удалось подтвердить, что отчет открыт из выбранной базы: " + expectedPath, ex);
+            }
+        }
+
+        private static AccessInstall FindAccessInstallation()
+        {
+            List<AccessInstall> found = new List<AccessInstall>();
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                AddProgIdInstall(found, view, "Access.Application");
+                AddProgIdInstall(found, view, "Access.Application.16");
+                AddProgIdInstall(found, view, "Access.Application.15");
+                AddProgIdInstall(found, view, "Access.Application.14");
+                AddAppPathInstall(found, view);
+                AddOfficeRootInstalls(found, view);
+            }
+
+            foreach (string path in KnownAccessPaths())
+            {
+                if (File.Exists(path))
+                {
+                    found.Add(new AccessInstall { ExePath = path, Source = "known path", View = RegistryView.Default });
+                }
+            }
+
+            foreach (AccessInstall install in found)
+            {
+                if (!string.IsNullOrWhiteSpace(install.ExePath) && File.Exists(install.ExePath))
+                {
+                    return install;
+                }
+            }
+            return found.Count > 0 ? found[0] : null;
+        }
+
+        private static void AddProgIdInstall(List<AccessInstall> found, RegistryView view, string progId)
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, view))
+                using (RegistryKey key = root.OpenSubKey(progId + @"\CLSID"))
+                {
+                    if (key != null)
+                    {
+                        found.Add(new AccessInstall { ProgId = progId, Source = progId + " CLSID", View = view });
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Info("Ошибка чтения ProgID Access в реестре " + view + ": " + ex.Message); }
+        }
+
+        private static void AddAppPathInstall(List<AccessInstall> found, RegistryView view)
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\MSACCESS.EXE"))
+                {
+                    string exe = key == null ? null : Convert.ToString(key.GetValue(null));
+                    if (!string.IsNullOrWhiteSpace(exe))
+                    {
+                        found.Add(new AccessInstall { ExePath = Environment.ExpandEnvironmentVariables(exe.Trim('"')), Source = "App Paths", View = view });
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Info("Ошибка чтения App Paths MSACCESS.EXE в реестре " + view + ": " + ex.Message); }
+        }
+
+        private static void AddOfficeRootInstalls(List<AccessInstall> found, RegistryView view)
+        {
+            foreach (string version in new[] { "16.0", "15.0", "14.0" })
+            {
+                try
+                {
+                    using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                    using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Office\" + version + @"\Common\InstallRoot"))
+                    {
+                        string path = key == null ? null : Convert.ToString(key.GetValue("Path"));
+                        if (!string.IsNullOrWhiteSpace(path))
+                        {
+                            found.Add(new AccessInstall { ExePath = Path.Combine(path, "MSACCESS.EXE"), Source = "Office " + version + " InstallRoot", View = view });
+                        }
+                    }
+                }
+                catch (Exception ex) { AppLog.Info("Ошибка чтения Office " + version + " InstallRoot в реестре " + view + ": " + ex.Message); }
+            }
+        }
+
+        private static IEnumerable<string> KnownAccessPaths()
+        {
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string pfx86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            foreach (string root in new[] { pf, pfx86 })
+            {
+                if (string.IsNullOrWhiteSpace(root)) continue;
+                foreach (string office in new[] { "Office16", "Office15", "Office14" })
+                {
+                    yield return Path.Combine(root, "Microsoft Office", office, "MSACCESS.EXE");
+                    yield return Path.Combine(root, "Microsoft Office", "root", office, "MSACCESS.EXE");
+                }
+            }
+        }
+
+        private static string DescribeInstall(AccessInstall install)
+        {
+            if (install == null) return "Сведения об установке Access не найдены.";
+            return "Access: ProgID=" + (install.ProgId ?? "-") + ", EXE=" + (install.ExePath ?? "-") + ", Source=" + (install.Source ?? "-") + ", View=" + install.View + ".";
+        }
+
+        private static void StartAccessDatabase(string exePath, string databasePath)
+        {
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = exePath;
+            startInfo.Arguments = Quote(databasePath);
+            startInfo.UseShellExecute = false;
+            startInfo.WorkingDirectory = Path.GetDirectoryName(exePath);
+            Process.Start(startInfo);
+            AppLog.Info("База открыта через MSACCESS.EXE без COM: " + databasePath);
+        }
+
+        private static string Quote(string value)
+        {
+            return "\"" + value.Replace("\"", "\\\"") + "\"";
         }
     }
 
@@ -3856,7 +4127,7 @@ internal sealed class PrintOptionsForm : Form
 
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
-            layout.BackColor = Color.Transparent;
+            layout.BackColor = SystemColors.Control;
             layout.ColumnCount = 1;
             layout.RowCount = 2;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
