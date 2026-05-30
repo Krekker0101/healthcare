@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.OleDb;
@@ -68,17 +68,16 @@ namespace HealthcareSanatoriumInterface
 
     internal static class Theme
     {
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
 
         public static bool Dark = false;
-        public static Color Ink { get { return Dark ? Color.FromArgb(232, 238, 248) : Color.FromArgb(24, 31, 44); } }
-        public static Color Muted { get { return Dark ? Color.FromArgb(164, 176, 196) : Color.FromArgb(91, 107, 129); } }
-        public static Color Line { get { return Dark ? Color.FromArgb(64, 78, 105) : Color.FromArgb(207, 216, 230); } }
-        public static Color Surface { get { return Dark ? Color.FromArgb(20, 27, 42) : Color.White; } }
-        public static Color Field { get { return Dark ? Color.FromArgb(28, 37, 56) : Color.White; } }
-        public static Color Blue { get { return Dark ? Color.FromArgb(74, 144, 255) : Color.FromArgb(0, 122, 255); } }
-        public static Color Green { get { return Dark ? Color.FromArgb(61, 220, 132) : Color.FromArgb(52, 199, 89); } }
+        public static Color Ink { get { return SystemColors.ControlText; } }
+        public static Color Muted { get { return SystemColors.GrayText; } }
+        public static Color Line { get { return SystemColors.ControlDark; } }
+        public static Color Panel { get { return SystemColors.Control; } }
+        public static Color Surface { get { return SystemColors.Window; } }
+        public static Color Field { get { return SystemColors.Window; } }
+        public static Color Blue { get { return SystemColors.Highlight; } }
+        public static Color Green { get { return SystemColors.Highlight; } }
         public static readonly Font BaseFont = new Font("Segoe UI", 10f, FontStyle.Regular);
         public static readonly Font TitleFont = new Font("Segoe UI Semibold", 21f, FontStyle.Bold);
         public static readonly Font H2Font = new Font("Segoe UI Semibold", 14f, FontStyle.Bold);
@@ -98,21 +97,16 @@ namespace HealthcareSanatoriumInterface
                 glass.Primary = primary;
                 glass.Large = button.Height >= 58 || button.Text.IndexOf('\n') >= 0;
             }
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = primary ? 0 : 1;
-            button.FlatAppearance.BorderColor = Line;
-            button.FlatAppearance.MouseOverBackColor = Dark ? Color.FromArgb(38, 52, 78) : Color.FromArgb(238, 246, 255);
-            button.FlatAppearance.MouseDownBackColor = Dark ? Color.FromArgb(24, 34, 54) : Color.FromArgb(219, 236, 255);
-            button.UseVisualStyleBackColor = false;
-            button.BackColor = glass == null ? (primary ? Blue : Surface) : Color.Transparent;
-            button.ForeColor = primary ? Color.White : Ink;
+            button.FlatStyle = FlatStyle.System;
+            button.UseVisualStyleBackColor = true;
+            button.BackColor = SystemColors.Control;
+            button.ForeColor = SystemColors.ControlText;
             button.Font = ButtonFont;
             button.Margin = Padding.Empty;
             button.AutoEllipsis = true;
             if (button.Height < 36) button.Height = 36;
-            button.Cursor = Cursors.Hand;
+            button.Cursor = Cursors.Default;
             button.TabStop = true;
-            button.Invalidate();
         }
 
         public static Label Label(string text, Font font, Color color)
@@ -121,7 +115,7 @@ namespace HealthcareSanatoriumInterface
             label.Text = text;
             label.Font = font;
             label.ForeColor = color;
-            label.BackColor = Color.Transparent;
+            label.BackColor = SystemColors.Control;
             label.AutoSize = true;
             return label;
         }
@@ -150,20 +144,20 @@ namespace HealthcareSanatoriumInterface
             grid.ColumnHeadersHeight = 34;
             grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
             grid.ShowCellToolTips = false;
-            grid.BackgroundColor = Surface;
-            grid.BorderStyle = BorderStyle.None;
-            grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Dark ? Color.FromArgb(35, 46, 68) : Color.FromArgb(246, 248, 252);
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = Ink;
+            grid.BackgroundColor = SystemColors.Window;
+            grid.BorderStyle = BorderStyle.Fixed3D;
+            grid.EnableHeadersVisualStyles = true;
+            grid.ColumnHeadersDefaultCellStyle.BackColor = SystemColors.Control;
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = SystemColors.ControlText;
             grid.ColumnHeadersDefaultCellStyle.Font = GridHeaderFont;
             grid.DefaultCellStyle.Font = GridCellFont;
-            grid.DefaultCellStyle.BackColor = Surface;
-            grid.DefaultCellStyle.ForeColor = Ink;
-            grid.DefaultCellStyle.SelectionBackColor = Dark ? Color.FromArgb(50, 76, 116) : Color.FromArgb(224, 239, 255);
-            grid.DefaultCellStyle.SelectionForeColor = Ink;
-            grid.AlternatingRowsDefaultCellStyle.BackColor = Dark ? Color.FromArgb(24, 33, 50) : Color.FromArgb(250, 252, 255);
+            grid.DefaultCellStyle.BackColor = SystemColors.Window;
+            grid.DefaultCellStyle.ForeColor = SystemColors.WindowText;
+            grid.DefaultCellStyle.SelectionBackColor = SystemColors.Highlight;
+            grid.DefaultCellStyle.SelectionForeColor = SystemColors.HighlightText;
+            grid.AlternatingRowsDefaultCellStyle.BackColor = SystemColors.Window;
             grid.RowHeadersVisible = false;
-            grid.GridColor = Dark ? Color.FromArgb(54, 66, 88) : Color.FromArgb(230, 235, 244);
+            grid.GridColor = SystemColors.ControlDark;
             grid.Dock = DockStyle.Fill;
             try
             {
@@ -176,7 +170,7 @@ namespace HealthcareSanatoriumInterface
         {
             if (root == null) return;
             root.Font = BaseFont;
-            if (!(root is GlassPanel)) root.BackColor = root is Form ? (Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249)) : root.BackColor;
+            if (!(root is GlassPanel)) root.BackColor = root is Form ? SystemColors.Control : root.BackColor;
             foreach (Control control in root.Controls)
             {
                 if (control is Button)
@@ -193,11 +187,6 @@ namespace HealthcareSanatoriumInterface
                 {
                     control.BackColor = Field;
                     control.ForeColor = Ink;
-                    string ph = control.Tag as string;
-                    if (!string.IsNullOrEmpty(ph))
-                    {
-                        try { SendMessage(control.Handle, 0x1501u, IntPtr.Zero, ph); } catch { }
-                    }
                 }
                 else if (control is ComboBox)
                 {
@@ -214,12 +203,12 @@ namespace HealthcareSanatoriumInterface
                 else if (control is CheckBox)
                 {
                     control.ForeColor = Ink;
-                    control.BackColor = Color.Transparent;
+                    control.BackColor = SystemColors.Control;
                     control.Font = BaseFont;
                 }
                 else if (control is Label)
                 {
-                    control.BackColor = Color.Transparent;
+                    control.BackColor = SystemColors.Control;
                     control.ForeColor = control.Font.Bold ? Ink : Muted;
                 }
                 ApplyTo(control);
@@ -565,10 +554,11 @@ public sealed class DbContext
 
     private string BuildProviderError()
     {
+        string details = string.IsNullOrWhiteSpace(lastProviderError) ? string.Empty : "\n\nТехнические сведения: " + lastProviderError;
         return "Ошибка подключения к базе данных. Проверьте:\n" +
                "1. Файл БД не поврежден\n" +
                "2. БД не открыта в другом приложении\n" +
-               "3. Права доступа к папке";
+               "3. Права доступа к папке" + details;
     }
 
     private string BuildConnectionError(string provider, Exception ex)
@@ -611,15 +601,13 @@ public class GlassForm : Form
 {
     protected readonly DbContext Db;
     private Bitmap backgroundCache;
-    private Size backgroundCacheSize;
-    private bool backgroundCacheDark;
 
     protected GlassForm(DbContext db)
     {
         Db = db;
         Font = Theme.BaseFont;
         Icon = TryLoadAppIcon();
-        BackColor = Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249);
+        BackColor = SystemColors.Control;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
         DoubleBuffered = true;
@@ -635,21 +623,7 @@ public class GlassForm : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
-
-        if (backgroundCache == null || backgroundCacheSize != ClientSize || backgroundCacheDark != Theme.Dark)
-        {
-            ResetBackgroundCache();
-            backgroundCache = new Bitmap(ClientSize.Width, ClientSize.Height);
-            backgroundCacheSize = ClientSize;
-            backgroundCacheDark = Theme.Dark;
-            using (Graphics graphics = Graphics.FromImage(backgroundCache))
-            {
-                PaintCachedBackground(graphics);
-            }
-        }
-
-        e.Graphics.DrawImageUnscaled(backgroundCache, Point.Empty);
+        e.Graphics.Clear(BackColor);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -665,25 +639,11 @@ public class GlassForm : Form
             backgroundCache.Dispose();
             backgroundCache = null;
         }
-        backgroundCacheSize = Size.Empty;
     }
 
     private void PaintCachedBackground(Graphics graphics)
     {
-        Rectangle bounds = new Rectangle(Point.Empty, ClientSize);
-        Color from = Theme.Dark ? Color.FromArgb(11, 16, 26) : Color.FromArgb(235, 242, 252);
-        Color to = Theme.Dark ? Color.FromArgb(25, 34, 52) : Color.FromArgb(250, 252, 255);
-        using (LinearGradientBrush brush = new LinearGradientBrush(bounds, from, to, 45f))
-        {
-            graphics.FillRectangle(brush, bounds);
-        }
-
-        using (SolidBrush blue = new SolidBrush(Theme.Dark ? Color.FromArgb(58, 74, 144, 255) : Color.FromArgb(42, 0, 122, 255)))
-        using (SolidBrush green = new SolidBrush(Theme.Dark ? Color.FromArgb(42, 61, 220, 132) : Color.FromArgb(32, 52, 199, 89)))
-        {
-            graphics.FillEllipse(blue, ClientSize.Width - 320, -90, 420, 260);
-            graphics.FillEllipse(green, -120, ClientSize.Height - 220, 340, 260);
-        }
+        graphics.Clear(BackColor);
     }
 
     protected static Icon TryLoadAppIcon()
@@ -728,7 +688,7 @@ public class GlassForm : Form
     {
         TableLayoutPanel t = new TableLayoutPanel();
         t.Dock = DockStyle.Fill;
-        t.BackColor = Color.Transparent;
+        t.BackColor = SystemColors.Control;
         t.ColumnCount = 1;
         t.RowCount = 4;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -743,7 +703,7 @@ public class GlassForm : Form
     {
         TableLayoutPanel h = new TableLayoutPanel();
         h.Dock = DockStyle.Fill;
-        h.BackColor = Color.Transparent;
+        h.BackColor = SystemColors.Control;
         h.ColumnCount = 2;
         h.RowCount = 1;
         h.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -755,23 +715,12 @@ public class GlassForm : Form
 
     protected static FlowLayoutPanel MakeHeaderButtons()
     {
-<<<<<<< HEAD
-        combo.BeginUpdate();
-        try
-        {
-            combo.Items.Clear();
-            if (addAll)
-            {
-                combo.Items.Add(new LookupItem(0, "Все"));
-            }
-
-=======
         FlowLayoutPanel f = new FlowLayoutPanel();
         f.AutoSize = true;
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.LeftToRight;
         f.WrapContents = false;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         f.Anchor = AnchorStyles.Right | AnchorStyles.Top;
         return f;
     }
@@ -784,7 +733,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.LeftToRight;
         f.WrapContents = true;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         f.Margin = new Padding(0, 0, 0, 8);
         return f;
     }
@@ -793,7 +742,7 @@ public class GlassForm : Form
     {
         TableLayoutPanel t = new TableLayoutPanel();
         t.Dock = DockStyle.Fill;
-        t.BackColor = Color.Transparent;
+        t.BackColor = SystemColors.Control;
         t.ColumnCount = 2;
         t.RowCount = 1;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -809,7 +758,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.LeftToRight;
         f.WrapContents = false;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         return f;
     }
 
@@ -820,7 +769,7 @@ public class GlassForm : Form
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         f.FlowDirection = FlowDirection.RightToLeft;
         f.WrapContents = false;
-        f.BackColor = Color.Transparent;
+        f.BackColor = SystemColors.Control;
         f.Anchor = AnchorStyles.Right | AnchorStyles.Top;
         return f;
     }
@@ -845,7 +794,6 @@ public class GlassForm : Form
                 combo.Items.Add(new LookupItem(0, allLabel));
             }
 
->>>>>>> c092d92 (Update repository with latest local changes)
             foreach (DataRow row in table.Rows)
             {
                 combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
@@ -869,7 +817,7 @@ public class GlassForm : Form
         try
         {
             SuspendLayout();
-            BackColor = Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249);
+            BackColor = SystemColors.Control;
             ResetBackgroundCache();
             Theme.ApplyTo(this);
             UiPerformance.Optimize(this);
@@ -889,38 +837,16 @@ public class GlassForm : Form
         {
             DoubleBuffered = true;
             Padding = new Padding(22);
-            BackColor = Color.Transparent;
+            BackColor = SystemColors.Control;
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle shadowRect = new Rectangle(10, 14, Width - 22, Height - 24);
-            Rectangle rect = new Rectangle(6, 4, Width - 13, Height - 12);
-            using (GraphicsPath shadow = Rounded(shadowRect, 24))
-            using (SolidBrush shadowBrush = new SolidBrush(Theme.Dark ? Color.FromArgb(90, 0, 0, 0) : Color.FromArgb(32, 78, 108, 150)))
+            using (Pen border = new Pen(SystemColors.ControlDark))
             {
-                e.Graphics.FillPath(shadowBrush, shadow);
-            }
-            using (GraphicsPath path = Rounded(rect, 22))
-            using (LinearGradientBrush fill = new LinearGradientBrush(rect, Theme.Dark ? Color.FromArgb(215, 30, 40, 62) : Color.FromArgb(230, 255, 255, 255), Theme.Dark ? Color.FromArgb(150, 18, 27, 45) : Color.FromArgb(180, 244, 248, 255), 90f))
-            using (Pen border = new Pen(Theme.Dark ? Color.FromArgb(90, 120, 150, 190) : Color.FromArgb(170, 255, 255, 255), 1f))
-            {
-                e.Graphics.FillPath(fill, path);
-                using (LinearGradientBrush sheen = new LinearGradientBrush(new Rectangle(rect.X, rect.Y, rect.Width, Math.Max(24, rect.Height / 3)), Theme.Dark ? Color.FromArgb(42, 255, 255, 255) : Color.FromArgb(150, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
-                {
-                    e.Graphics.FillPath(sheen, path);
-                }
-                using (Pen inner = new Pen(Theme.Dark ? Color.FromArgb(55, 255, 255, 255) : Color.FromArgb(120, 255, 255, 255), 1f))
-                {
-                    Rectangle innerRect = new Rectangle(rect.X + 1, rect.Y + 1, rect.Width - 2, rect.Height - 2);
-                    using (GraphicsPath innerPath = Rounded(innerRect, 20))
-                    {
-                        e.Graphics.DrawPath(inner, innerPath);
-                    }
-                }
-                e.Graphics.DrawPath(border, path);
+                Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+                e.Graphics.DrawRectangle(border, rect);
             }
         }
 
@@ -944,10 +870,10 @@ public class GlassForm : Form
 
         public GlassButton()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
-            BackColor = Color.Transparent;
-            FlatStyle = FlatStyle.Flat;
-            FlatAppearance.BorderSize = 0;
+            SetStyle(ControlStyles.UserPaint, false);
+            BackColor = SystemColors.Control;
+            FlatStyle = FlatStyle.System;
+            UseVisualStyleBackColor = true;
         }
 
         public bool Primary { get; set; }
@@ -984,73 +910,15 @@ public class GlassForm : Form
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color clearColor = Parent == null || Parent.BackColor.A < 255 ? (Theme.Dark ? Color.FromArgb(13, 18, 29) : Color.FromArgb(232, 239, 249)) : Parent.BackColor;
-            e.Graphics.Clear(clearColor);
-            Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
-            int radius = Math.Max(10, Math.Min(16, Height / 3));
-            if (pressed) rect.Offset(0, 1);
-
-            Color top;
-            Color bottom;
-            Color border;
-            Color text;
-            Color shineTop;
-            if (Primary)
+            if (hot || pressed)
             {
-                top = hot ? Color.FromArgb(242, 39, 137, 248) : Color.FromArgb(235, 18, 122, 234);
-                bottom = hot ? Color.FromArgb(235, 6, 102, 214) : Color.FromArgb(224, 0, 91, 198);
-                border = Color.FromArgb(150, 115, 179, 250);
-                text = Color.White;
-                shineTop = Color.FromArgb(58, 255, 255, 255);
-            }
-         else if (Theme.Dark)
-            {
-                top = hot ? Color.FromArgb(230, 50, 65, 90) : Color.FromArgb(210, 40, 55, 80);
-                bottom = hot ? Color.FromArgb(195, 35, 48, 70) : Color.FromArgb(175, 28, 38, 60);
-                border = Color.FromArgb(128, 110, 130, 160);
-                text = Theme.Ink;
-                shineTop = Color.FromArgb(42, 255, 255, 255);
+                FlatAppearance.BorderColor = SystemColors.Highlight;
             }
             else
             {
-                top = hot ? Color.FromArgb(248, 250, 255, 255) : Color.FromArgb(242, 245, 252, 255);
-                bottom = hot ? Color.FromArgb(235, 242, 250, 255) : Color.FromArgb(228, 238, 248, 255);
-                border = Color.FromArgb(195, 205, 220, 235);
-                text = Theme.Ink;
-                shineTop = Color.FromArgb(90, 255, 255, 255);
+                FlatAppearance.BorderColor = SystemColors.ControlDark;
             }
-
-            Rectangle shadowRect = new Rectangle(rect.X, rect.Y + 2, rect.Width, rect.Height);
-            using (GraphicsPath shadowPath = Rounded(shadowRect, radius))
-            using (SolidBrush shadow = new SolidBrush(Theme.Dark ? Color.FromArgb(36, 0, 0, 0) : Color.FromArgb(14, 80, 104, 145)))
-            {
-                e.Graphics.FillPath(shadow, shadowPath);
-            }
-
-            using (GraphicsPath path = Rounded(rect, radius))
-            using (LinearGradientBrush fill = new LinearGradientBrush(rect, top, bottom, 90f))
-            using (Pen pen = new Pen(border, 1f))
-            {
-                e.Graphics.FillPath(fill, path);
-                Rectangle shineRect = new Rectangle(rect.X + 2, rect.Y + 2, rect.Width - 4, Math.Max(8, rect.Height / 3));
-                using (GraphicsPath shinePath = Rounded(shineRect, Math.Max(8, radius - 3)))
-                using (LinearGradientBrush shine = new LinearGradientBrush(shineRect, shineTop, Color.FromArgb(0, 255, 255, 255), 90f))
-                {
-                    e.Graphics.FillPath(shine, shinePath);
-                }
-                using (Pen inner = new Pen(Theme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(92, 255, 255, 255), 1f))
-                {
-                    Rectangle innerRect = new Rectangle(rect.X + 1, rect.Y + 1, rect.Width - 2, rect.Height - 2);
-                    using (GraphicsPath innerPath = Rounded(innerRect, Math.Max(8, radius - 1)))
-                    {
-                        e.Graphics.DrawPath(inner, innerPath);
-                    }
-                }
-                e.Graphics.DrawPath(pen, path);
-            }
-
-            DrawCaption(e.Graphics, rect, text);
+            base.OnPaint(e);
         }
 
         private void DrawCaption(Graphics g, Rectangle rect, Color textColor)
@@ -1123,7 +991,7 @@ internal sealed class MainForm : GlassForm
         root.Dock = DockStyle.Fill;
         root.ColumnCount = 2;
         root.RowCount = 1;
-        root.BackColor = Color.Transparent;
+        root.BackColor = SystemColors.Control;
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330f));
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         Controls.Add(root);
@@ -1142,7 +1010,7 @@ internal sealed class MainForm : GlassForm
 
         TableLayoutPanel sidebarLayout = new TableLayoutPanel();
         sidebarLayout.Dock = DockStyle.Fill;
-        sidebarLayout.BackColor = Color.Transparent;
+        sidebarLayout.BackColor = SystemColors.Control;
         sidebarLayout.ColumnCount = 1;
         sidebarLayout.RowCount = 4;
         sidebarLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -1164,14 +1032,14 @@ internal sealed class MainForm : GlassForm
         Panel navHost = new Panel();
         navHost.Dock = DockStyle.Fill;
         navHost.AutoScroll = true;
-        navHost.BackColor = Color.Transparent;
+        navHost.BackColor = SystemColors.Control;
         sidebarLayout.Controls.Add(navHost, 0, 2);
 
         navLayout = new TableLayoutPanel();
         navLayout.Dock = DockStyle.Top;
         navLayout.AutoSize = true;
         navLayout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        navLayout.BackColor = Color.Transparent;
+        navLayout.BackColor = SystemColors.Control;
         navLayout.ColumnCount = 1;
         navLayout.RowCount = 0;
         navLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -1182,7 +1050,7 @@ internal sealed class MainForm : GlassForm
         sidebarActions.AutoSize = true;
         sidebarActions.ColumnCount = 1;
         sidebarActions.RowCount = 2;
-        sidebarActions.BackColor = Color.Transparent;
+        sidebarActions.BackColor = SystemColors.Control;
         sidebarActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         sidebarActions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebarActions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -1209,7 +1077,7 @@ internal sealed class MainForm : GlassForm
 
         homeLayout = new TableLayoutPanel();
         homeLayout.Dock = DockStyle.Fill;
-        homeLayout.BackColor = Color.Transparent;
+        homeLayout.BackColor = SystemColors.Control;
         homeLayout.ColumnCount = 1;
         homeLayout.RowCount = 5;
         homeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -1235,7 +1103,7 @@ internal sealed class MainForm : GlassForm
 
         Panel spacer = new Panel();
         spacer.Dock = DockStyle.Fill;
-        spacer.BackColor = Color.Transparent;
+        spacer.BackColor = SystemColors.Control;
         homeLayout.Controls.Add(spacer, 0, 3);
 
         manualBar = new FlowLayoutPanel();
@@ -1273,11 +1141,7 @@ internal sealed class MainForm : GlassForm
 
         Button allPdf = new GlassButton();
         allPdf.Text = "PDF: все таблицы";
-<<<<<<< HEAD
-        allPdf.SetBounds(0, 0, 170, 42);
-=======
         allPdf.Size = new Size(162, 40);
->>>>>>> c092d92 (Update repository with latest local changes)
         Theme.StyleButton(allPdf, true);
         allPdf.Click += delegate { ExportAllTablesPdf(); };
         manualBar.Controls.Add(allPdf);
@@ -1515,47 +1379,11 @@ internal sealed class MainForm : GlassForm
             onlyWithVouchers = new CheckBox();
             onlyWithVouchers.Text = "Только с путевками";
             onlyWithVouchers.AutoSize = true;
-            onlyWithVouchers.BackColor = Color.Transparent;
-<<<<<<< HEAD
-            panel.Controls.Add(onlyWithVouchers);
-
-            Button load = new GlassButton();
-            load.Text = "Обновить";
-            load.SetBounds(766, 84, 124, 38);
-            load.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(load, true);
-            load.Click += delegate { LoadGrid(); };
-            panel.Controls.Add(load);
-
-            Button exportPdf = new GlassButton();
-            exportPdf.Text = "PDF";
-            exportPdf.SetBounds(904, 84, 114, 38);
-            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(exportPdf, false);
-            exportPdf.Click += delegate { ExportPdf(); };
-            panel.Controls.Add(exportPdf);
-
-            Button add = new GlassButton();
-            add.Text = "Добавить";
-            add.SetBounds(28, 552, 132, 40);
-            add.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(add, true);
-            add.Click += AddPensioner;
-            panel.Controls.Add(add);
-
-            Button delete = new GlassButton();
-            delete.Text = "Удалить";
-            delete.SetBounds(174, 552, 132, 40);
-            delete.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(delete, false);
-            delete.Click += DeletePensioner;
-            panel.Controls.Add(delete);
-=======
+            onlyWithVouchers.BackColor = SystemColors.Control;
             onlyWithVouchers.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(search);
             filters.Controls.Add(region);
             filters.Controls.Add(onlyWithVouchers);
->>>>>>> c092d92 (Update repository with latest local changes)
 
             // Grid
             grid = new DataGridView();
@@ -1586,11 +1414,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-<<<<<<< HEAD
-                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
-=======
                     FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
->>>>>>> c092d92 (Update repository with latest local changes)
                     LoadGrid();
                 });
             };
@@ -1623,7 +1447,7 @@ internal sealed class MainForm : GlassForm
                 }
                 if (onlyWithVouchers.Checked)
                 {
-                    where.Add("EXISTS (SELECT 1 FROM tblVoucherIssues AS vi WHERE vi.PensionerID = p.PensionerID)");
+                    where.Add("EXISTS (SELECT * FROM tblVoucherIssues AS vi WHERE vi.PensionerID = p.PensionerID)");
                 }
                 string sql =
                     "SELECT p.PensionerID AS [Код], p.LastName AS [Фамилия], p.FirstName AS [Имя], p.MiddleName AS [Отчество], " +
@@ -1742,7 +1566,7 @@ internal sealed class MainForm : GlassForm
             hideCanceled.Text = "Скрыть отмененные";
             hideCanceled.Checked = true;
             hideCanceled.AutoSize = true;
-            hideCanceled.BackColor = Color.Transparent;
+            hideCanceled.BackColor = SystemColors.Control;
             hideCanceled.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(region); filters.Controls.Add(status); filters.Controls.Add(hideCanceled);
 
@@ -1775,13 +1599,8 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-<<<<<<< HEAD
-                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
-                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
-=======
                     FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
                     FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true, "Статус: все");
->>>>>>> c092d92 (Update repository with latest local changes)
                     LoadGrid();
                 });
             };
@@ -1995,47 +1814,9 @@ internal sealed class MainForm : GlassForm
             onlyActive.Text = "Только работающие";
             onlyActive.Checked = true;
             onlyActive.AutoSize = true;
-            onlyActive.BackColor = Color.Transparent;
-<<<<<<< HEAD
-            onlyActive.SetBounds(326, 88, 190, 30);
-            onlyActive.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            panel.Controls.Add(onlyActive);
-
-            Button load = new GlassButton();
-            load.Text = "Обновить";
-            load.SetBounds(536, 84, 124, 38);
-            load.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(load, true);
-            load.Click += delegate { LoadGrid(); };
-            panel.Controls.Add(load);
-
-            Button exportPdf = new GlassButton();
-            exportPdf.Text = "PDF";
-            exportPdf.SetBounds(674, 84, 114, 38);
-            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(exportPdf, false);
-            exportPdf.Click += delegate { ExportPdf(); };
-            panel.Controls.Add(exportPdf);
-
-            Button add = new GlassButton();
-            add.Text = "Добавить";
-            add.SetBounds(28, 520, 132, 40);
-            add.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(add, true);
-            add.Click += AddSanatorium;
-            panel.Controls.Add(add);
-
-            Button delete = new GlassButton();
-            delete.Text = "Удалить";
-            delete.SetBounds(174, 520, 132, 40);
-            delete.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(delete, false);
-            delete.Click += DeleteSanatorium;
-            panel.Controls.Add(delete);
-=======
+            onlyActive.BackColor = SystemColors.Control;
             onlyActive.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(profile); filters.Controls.Add(onlyActive);
->>>>>>> c092d92 (Update repository with latest local changes)
 
             // Grid
             grid = new DataGridView();
@@ -2066,11 +1847,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-<<<<<<< HEAD
-                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
-=======
                     FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true, "Профиль: все");
->>>>>>> c092d92 (Update repository with latest local changes)
                     LoadGrid();
                 });
             };
@@ -2196,7 +1973,7 @@ internal abstract class RecordFormBase : GlassForm
         root.Dock = DockStyle.Fill;
         root.ColumnCount = 1;
         root.RowCount = 3;
-        root.BackColor = Color.Transparent;
+        root.BackColor = SystemColors.Control;
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -2211,7 +1988,7 @@ internal abstract class RecordFormBase : GlassForm
         fieldLayout.Dock = DockStyle.Fill;
         fieldLayout.AutoSize = true;
         fieldLayout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        fieldLayout.BackColor = Color.Transparent;
+        fieldLayout.BackColor = SystemColors.Control;
         fieldLayout.ColumnCount = 2;
         fieldLayout.RowCount = 0;
         fieldLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200f));
@@ -2311,7 +2088,7 @@ internal abstract class RecordFormBase : GlassForm
         check.Text = text;
         check.Checked = value;
         check.AutoSize = true;
-        check.BackColor = Color.Transparent;
+        check.BackColor = SystemColors.Control;
         check.Margin = new Padding(0, 8, 0, 4);
         fieldLayout.RowCount = rowIndex + 1;
         fieldLayout.Controls.Add(check, 0, rowIndex);
@@ -2425,10 +2202,7 @@ internal abstract class RecordFormBase : GlassForm
         public PensionerEditForm(DbContext db, int editId = 0)
             : base(db, editId == 0 ? "Добавление пенсионера" : "Редактирование пенсионера", new Size(720, 690))
         {
-<<<<<<< HEAD
-=======
             this.editId = editId;
->>>>>>> c092d92 (Update repository with latest local changes)
             region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             category = AddLookup("Категория", Db.LookupCached("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
             last = AddText("Фамилия *", "", 330);
@@ -2641,10 +2415,7 @@ internal abstract class RecordFormBase : GlassForm
         public SanatoriumEditForm(DbContext db, int editId = 0)
             : base(db, editId == 0 ? "Добавление санатория" : "Редактирование санатория", new Size(720, 600))
         {
-<<<<<<< HEAD
-=======
             this.editId = editId;
->>>>>>> c092d92 (Update repository with latest local changes)
             region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             profile = AddLookup("Профиль", Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
             name = AddText("Санаторий *", "", 360);
@@ -2741,7 +2512,7 @@ internal sealed class DataToolsForm : GlassForm
 
         TableLayoutPanel layout = new TableLayoutPanel();
         layout.Dock = DockStyle.Fill;
-        layout.BackColor = Color.Transparent;
+        layout.BackColor = SystemColors.Control;
         layout.ColumnCount = 1;
         layout.RowCount = 5;
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -2936,7 +2707,7 @@ internal sealed class PrintOptionsForm : Form
 
         TableLayoutPanel root = new TableLayoutPanel();
         root.Dock = DockStyle.Fill;
-        root.BackColor = Color.Transparent;
+        root.BackColor = SystemColors.Control;
         root.ColumnCount = 1;
         root.RowCount = 5;
         root.Padding = new Padding(24);
@@ -2988,7 +2759,7 @@ internal sealed class PrintOptionsForm : Form
         preview.Text = "Предпросмотр";
         preview.AutoSize = true;
         preview.Checked = !preferPrint;
-        preview.BackColor = Color.Transparent;
+        preview.BackColor = SystemColors.Control;
         preview.ForeColor = Theme.Ink;
         modes.Controls.Add(preview);
 
@@ -2996,14 +2767,14 @@ internal sealed class PrintOptionsForm : Form
         direct.Text = "Печать сразу";
         direct.AutoSize = true;
         direct.Checked = preferPrint;
-        direct.BackColor = Color.Transparent;
+        direct.BackColor = SystemColors.Control;
         direct.ForeColor = Theme.Ink;
         modes.Controls.Add(direct);
 
         pdf = new RadioButton();
         pdf.Text = "Сохранить красивый PDF";
         pdf.AutoSize = true;
-        pdf.BackColor = Color.Transparent;
+        pdf.BackColor = SystemColors.Control;
         pdf.ForeColor = Theme.Ink;
         modes.Controls.Add(pdf);
 
@@ -3832,47 +3603,30 @@ internal sealed class PrintOptionsForm : Form
 
             protected override void OnPaint(PaintEventArgs e)
             {
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
-                Color accent = success ? Theme.Green : Color.FromArgb(255, 149, 0);
-                Color bgTop = success ? Color.FromArgb(245, 253, 245) : Color.FromArgb(255, 250, 245);
-                Color bgBottom = success ? Color.FromArgb(235, 248, 235) : Color.FromArgb(255, 245, 235);
-                
-                using (GraphicsPath path = Rounded(rect, 18))
-                using (LinearGradientBrush fill = new LinearGradientBrush(rect, Theme.Dark ? Color.FromArgb(235, 28, 36, 54) : bgTop, Theme.Dark ? Color.FromArgb(220, 18, 25, 40) : bgBottom, 90f))
-                using (Pen border = new Pen(accent, 1.5f))
-                using (SolidBrush accentBrush = new SolidBrush(accent))
-                using (SolidBrush textBrush = new SolidBrush(Theme.Ink))
+                Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+                Color accent = success ? SystemColors.Highlight : SystemColors.ControlDarkDark;
+                using (SolidBrush background = new SolidBrush(SystemColors.Info))
+                using (Pen border = new Pen(accent))
+                using (SolidBrush textBrush = new SolidBrush(SystemColors.InfoText))
+                using (SolidBrush mutedBrush = new SolidBrush(SystemColors.GrayText))
                 using (Font titleFont = new Font("Segoe UI Semibold", 10f, FontStyle.Bold))
                 using (Font messageFont = new Font("Segoe UI", 9f, FontStyle.Regular))
                 {
-                    e.Graphics.FillPath(fill, path);
-                    e.Graphics.DrawPath(border, path);
-                    
-                    e.Graphics.FillEllipse(accentBrush, 18, 22, 18, 18);
-                    string icon = success ? "✓" : "⚠";
-                    using (SolidBrush iconBrush = new SolidBrush(Color.White))
-                    using (Font iconFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold))
-                    {
-                        e.Graphics.DrawString(icon, iconFont, iconBrush, new RectangleF(20, 23, 14, 16));
-                    }
-                    
+                    e.Graphics.FillRectangle(background, rect);
+                    e.Graphics.DrawRectangle(border, rect);
+
                     string[] lines = message.Split(new[] { "\n" }, StringSplitOptions.None);
-                    float textY = 20;
-                    
+                    float textY = 14;
                     if (lines.Length > 0)
                     {
-                        e.Graphics.DrawString(lines[0], titleFont, textBrush, new RectangleF(48, textY, Width - 72, 18));
+                        e.Graphics.DrawString(lines[0], titleFont, textBrush, new RectangleF(16, textY, Width - 32, 18));
                         textY += 22;
                     }
-                    
-                    if (lines.Length > 1)
+
+                    for (int i = 1; i < lines.Length && textY < Height - 10; i++)
                     {
-                        for (int i = 1; i < lines.Length && textY < Height - 10; i++)
-                        {
-                            e.Graphics.DrawString(lines[i], messageFont, new SolidBrush(Theme.Muted), new RectangleF(48, textY, Width - 72, 18));
-                            textY += 18;
-                        }
+                        e.Graphics.DrawString(lines[i], messageFont, mutedBrush, new RectangleF(16, textY, Width - 32, 18));
+                        textY += 18;
                     }
                 }
             }
@@ -3951,7 +3705,7 @@ internal sealed class PrintOptionsForm : Form
 
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
-            layout.BackColor = Color.Transparent;
+            layout.BackColor = SystemColors.Control;
             layout.ColumnCount = 1;
             layout.RowCount = 2;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
