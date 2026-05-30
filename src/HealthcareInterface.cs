@@ -7,9 +7,11 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Printing;
 using System.IO;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace HealthcareSanatoriumInterface
 {
@@ -48,7 +50,7 @@ namespace HealthcareSanatoriumInterface
                 {
                     DbContext testDb = new DbContext(dbPath);
                     if (!testDb.Exists()) Environment.Exit(2);
-                    DataTable table = testDb.Query("SELECT TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+                    DataTable table = testDb.Query(ReportSql.SelectVoucherIssuesDetailed("TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость]", "IssueDate, VoucherNo"));
                     string testPdf = Path.Combine(baseDir, "pdf-self-test.pdf");
                     ProfessionalPdfExporter.ExportDataTableToFile(testPdf, "Тестовый PDF-отчет", "Система здравоохранения", table);
                     FileInfo info = new FileInfo(testPdf);
@@ -343,6 +345,87 @@ public static class UiPerformance
         }
     }
 }
+
+internal static class AppLog
+{
+    private static readonly object Sync = new object();
+
+    public static string LogPath
+    {
+        get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "healthcare-reports.log"); }
+    }
+
+    public static void Info(string message)
+    {
+        Write("INFO", message, null);
+    }
+
+    public static void Error(string message, Exception ex)
+    {
+        Write("ERROR", message, ex);
+    }
+
+    private static void Write(string level, string message, Exception ex)
+    {
+        try
+        {
+            lock (Sync)
+            {
+                StringBuilder line = new StringBuilder();
+                line.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+                line.Append(" [").Append(level).Append("] ").Append(message);
+                if (ex != null)
+                {
+                    line.Append(Environment.NewLine).Append(ex);
+                }
+                line.Append(Environment.NewLine);
+                File.AppendAllText(LogPath, line.ToString(), Encoding.UTF8);
+            }
+        }
+        catch
+        {
+        }
+    }
+}
+
+
+internal static class ReportSql
+{
+    public const string VoucherIssuesDetailed =
+        "SELECT vi.VoucherNo, vi.IssueDate, " +
+        "p.LastName & ' ' & p.FirstName & IIf(IsNull(p.MiddleName) Or p.MiddleName='', '', ' ' & p.MiddleName) AS PensionerFullName, " +
+        "r.RegionName AS PensionerRegion, sr.RegionName AS SanatoriumRegion, s.SanatoriumName, vi.StartDate, vi.EndDate, " +
+        "DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1 AS DaysCount, " +
+        "(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay] AS TotalCost, " +
+        "vs.StatusName, vi.CoPaymentPercent, vi.Notes " +
+        "FROM ((((tblVoucherIssues AS vi INNER JOIN tblPensioners AS p ON vi.PensionerID = p.PensionerID) " +
+        "INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) " +
+        "INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) " +
+        "INNER JOIN tblRegions AS sr ON s.RegionID = sr.RegionID) " +
+        "INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID";
+
+    public const string TotalsBySanatorium =
+        "SELECT d.SanatoriumRegion, d.SanatoriumName, Count(*) AS VoucherCount, " +
+        "Sum(d.DaysCount) AS TotalDays, Sum(d.TotalCost) AS TotalPlannedCost " +
+        "FROM (" + VoucherIssuesDetailed + ") AS d " +
+        "GROUP BY d.SanatoriumRegion, d.SanatoriumName";
+
+    public static string SelectVoucherIssuesDetailed(string fields, string orderBy)
+    {
+        return "SELECT " + fields + " FROM (" + VoucherIssuesDetailed + ") AS q" + AppendOrder(orderBy);
+    }
+
+    public static string SelectTotalsBySanatorium(string fields, string orderBy)
+    {
+        return "SELECT " + fields + " FROM (" + TotalsBySanatorium + ") AS q" + AppendOrder(orderBy);
+    }
+
+    private static string AppendOrder(string orderBy)
+    {
+        return string.IsNullOrWhiteSpace(orderBy) ? string.Empty : " ORDER BY " + orderBy;
+    }
+}
+
 public sealed class DbContext
 {
     private static readonly string[] AccdbProviders = new[] { "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0", "Microsoft.Jet.OLEDB.4.0" };
@@ -518,6 +601,7 @@ public sealed class DbContext
             {
                 resolvedProvider = provider;
                 lastProviderError = null;
+                AppLog.Info("OLE DB provider selected for " + DatabasePath + ": " + provider);
                 return resolvedProvider;
             }
 
@@ -547,7 +631,8 @@ public sealed class DbContext
         }
         catch (Exception ex)
         {
-            failure = ex.Message;
+            failure = provider + ": " + ex.Message;
+            AppLog.Info("OLE DB provider check failed: " + failure);
             return false;
         }
     }
@@ -563,7 +648,8 @@ public sealed class DbContext
 
     private string BuildConnectionError(string provider, Exception ex)
     {
-        return "Не удалось открыть БД: " + ex.Message;
+        AppLog.Error("Ошибка открытия базы через провайдер " + provider + ": " + DatabasePath, ex);
+        return "Не удалось открыть БД через " + provider + ": " + ex.Message;
     }
 
     private string[] GetProviderCandidates()
@@ -575,6 +661,49 @@ public sealed class DbContext
         }
 
         return AccdbProviders;
+    }
+
+    public void EnsureReportQueriesCompatible()
+    {
+        if (!Exists()) return;
+
+        try
+        {
+            AppLog.Info("Проверка совместимости сохраненных Access-запросов для отчетов: " + Path.GetFullPath(DatabasePath));
+            ReplaceSavedQuery("qryReport_VoucherIssuesDetailed", ReportSql.VoucherIssuesDetailed);
+            ReplaceSavedQuery("qry02_Calculated_VoucherCostAndAge", ReportSql.VoucherIssuesDetailed);
+            ReplaceSavedQuery("qry01_Selection_ActiveVoucherIssues", ReportSql.VoucherIssuesDetailed + " WHERE vs.StatusName <> 'Отменена'");
+            ReplaceSavedQuery("qry04_Totals_BySanatorium", ReportSql.TotalsBySanatorium);
+            AppLog.Info("Проверка сохраненных Access-запросов завершена.");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Не удалось автоматически обновить сохраненные Access-запросы. Работа приложения продолжится с встроенными SQL-запросами без Nz().", ex);
+        }
+    }
+
+    private void ReplaceSavedQuery(string queryName, string selectSql)
+    {
+        string safeName = "[" + queryName.Replace("]", "]]" ) + "]";
+        try
+        {
+            Execute("DROP VIEW " + safeName);
+            AppLog.Info("Удален устаревший сохраненный запрос " + queryName + ".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info("Сохраненный запрос " + queryName + " не был удален перед обновлением: " + ex.Message);
+        }
+
+        try
+        {
+            Execute("CREATE VIEW " + safeName + " AS " + selectSql);
+            AppLog.Info("Создан совместимый сохраненный запрос " + queryName + ".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Не удалось создать сохраненный запрос " + queryName + ".", ex);
+        }
     }
 }
 
@@ -1183,7 +1312,7 @@ internal sealed class MainForm : GlassForm
         });
 
         SelectNavButton("Пенсионеры");
-        Load += delegate { RefreshStats(); };
+        Load += delegate { Db.EnsureReportQueriesCompatible(); RefreshStats(); };
     }
 
     private void AddNavButton(string title, string subtitle, EventHandler click)
@@ -1331,6 +1460,7 @@ internal sealed class MainForm : GlassForm
             if (dialog.ShowDialog(this) == DialogResult.OK)
             {
                 Db.SetDatabasePath(dialog.FileName);
+                Db.EnsureReportQueriesCompatible();
                 RefreshStats();
                 ToastNotifier.Show(this, "База подключена и данные обновлены", true);
             }
@@ -1722,12 +1852,12 @@ internal sealed class MainForm : GlassForm
                         bool saved = false;
                         if (options.Target == PrintTarget.AccessJournal)
                         {
-                            DataTable table = Db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+                            DataTable table = Db.Query(ReportSql.SelectVoucherIssuesDetailed("VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус]", "IssueDate, VoucherNo"));
                             saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Журнал регистрации выдачи путевок", "Система здравоохранения", table, "journal_vouchers.pdf");
                         }
                         else if (options.Target == PrintTarget.AccessRegionTotals)
                         {
-                            DataTable table = Db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
+                            DataTable table = Db.Query(ReportSql.SelectTotalsBySanatorium("SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость]", "SanatoriumRegion, SanatoriumName"));
                             saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Итоги по санаториям и регионам", "Система здравоохранения", table, "region_totals.pdf");
                         }
                         else if (options.Target == PrintTarget.VisibleGrid)
@@ -2661,7 +2791,7 @@ internal sealed class DataToolsForm : GlassForm
 
         public static DataTable Vouchers(DbContext db)
         {
-            return db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+            return db.Query(ReportSql.SelectVoucherIssuesDetailed("VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус]", "IssueDate, VoucherNo"));
         }
 
         public static DataTable Sanatoriums(DbContext db)
@@ -2671,7 +2801,7 @@ internal sealed class DataToolsForm : GlassForm
 
         public static DataTable RegionTotals(DbContext db)
         {
-            return db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
+            return db.Query(ReportSql.SelectTotalsBySanatorium("SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость]", "SanatoriumRegion, SanatoriumName"));
         }
     }
 
@@ -3068,8 +3198,17 @@ internal sealed class PrintOptionsForm : Form
                     return false;
                 }
 
-                WriteImagePdf(dialog.FileName, pages);
-                return true;
+                try
+                {
+                    WriteImagePdf(dialog.FileName, pages);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Ошибка экспорта разделов в PDF: " + dialog.FileName, ex);
+                    MessageBox.Show("PDF-файл не создан.\n\nПуть: " + dialog.FileName + "\nПричина: " + ex.Message + "\n\nПодробности записаны в: " + AppLog.LogPath, "PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
         }
 
@@ -3105,8 +3244,17 @@ internal sealed class PrintOptionsForm : Form
                     rows.Add(values);
                 }
 
-                Export(dialog.FileName, title, subtitle, headers, rows);
-                return true;
+                try
+                {
+                    Export(dialog.FileName, title, subtitle, headers, rows);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Ошибка экспорта DataTable в PDF: " + dialog.FileName, ex);
+                    MessageBox.Show("PDF-файл не создан.\n\nПуть: " + dialog.FileName + "\nПричина: " + ex.Message + "\n\nПодробности записаны в: " + AppLog.LogPath, "PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
         }
 
@@ -3177,8 +3325,17 @@ internal sealed class PrintOptionsForm : Form
                 dialog.FileName = defaultFileName;
                 dialog.Title = "Сохранить PDF";
                 if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
-                Export(dialog.FileName, title, "Система здравоохранения", headers, rows);
-                return true;
+                try
+                {
+                    Export(dialog.FileName, title, "Система здравоохранения", headers, rows);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Ошибка экспорта таблицы в PDF: " + dialog.FileName, ex);
+                    MessageBox.Show("PDF-файл не создан.\n\nПуть: " + dialog.FileName + "\nПричина: " + ex.Message + "\n\nПодробности записаны в: " + AppLog.LogPath, "PDF", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
         }
 
@@ -3376,6 +3533,36 @@ internal sealed class PrintOptionsForm : Form
 
         private static void WriteImagePdf(string path, List<byte[]> pageImages)
         {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentException("Путь к PDF-файлу не задан.");
+            }
+
+            if (pageImages == null || pageImages.Count == 0)
+            {
+                throw new InvalidOperationException("Нет подготовленных страниц для записи PDF.");
+            }
+
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                directory = AppDomain.CurrentDomain.BaseDirectory;
+                fullPath = Path.Combine(directory, Path.GetFileName(fullPath));
+            }
+
+            Directory.CreateDirectory(directory);
+            string probe = Path.Combine(directory, ".pdf-write-test-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
+            {
+                File.WriteAllText(probe, "test", Encoding.ASCII);
+                File.Delete(probe);
+            }
+            catch (Exception ex)
+            {
+                throw new UnauthorizedAccessException("Нет прав на запись PDF в папку: " + directory, ex);
+            }
+
             using (MemoryStream pdf = new MemoryStream())
             {
                 WriteAscii(pdf, "%PDF-1.4\n");
@@ -3436,7 +3623,35 @@ internal sealed class PrintOptionsForm : Form
                     WriteAscii(pdf, offset.ToString("0000000000") + " 00000 n \n");
                 }
                 WriteAscii(pdf, "trailer\n<< /Size " + (objectCount + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF");
-                File.WriteAllBytes(path, pdf.ToArray());
+                byte[] bytes = pdf.ToArray();
+                string tempPath = Path.Combine(directory, Path.GetFileName(fullPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+                try
+                {
+                    File.WriteAllBytes(tempPath, bytes);
+                    FileInfo tempInfo = new FileInfo(tempPath);
+                    if (!tempInfo.Exists || tempInfo.Length != bytes.Length)
+                    {
+                        throw new IOException("Временный PDF-файл не был записан полностью: " + tempPath);
+                    }
+
+                    if (File.Exists(fullPath))
+                    {
+                        File.Delete(fullPath);
+                    }
+                    File.Move(tempPath, fullPath);
+
+                    FileInfo finalInfo = new FileInfo(fullPath);
+                    if (!finalInfo.Exists || finalInfo.Length < 100)
+                    {
+                        throw new IOException("Итоговый PDF-файл отсутствует или пуст: " + fullPath);
+                    }
+                    AppLog.Info("PDF создан: " + fullPath + " (" + finalInfo.Length + " байт).");
+                }
+                catch
+                {
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                    throw;
+                }
             }
         }
 
@@ -3470,7 +3685,7 @@ internal sealed class PrintOptionsForm : Form
                 return 2;
             }
 
-            DataTable table = testDb.Query("SELECT TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+            DataTable table = testDb.Query(ReportSql.SelectVoucherIssuesDetailed("TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость]", "IssueDate, VoucherNo"));
             string testPdf = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pdf-self-test.pdf");
             ProfessionalPdfExporter.ExportDataTableToFile(testPdf, "Тестовый PDF-отчет", "Система здравоохранения", table);
 
@@ -3647,25 +3862,68 @@ internal sealed class PrintOptionsForm : Form
 
     internal static class ReportRunner
     {
+        private sealed class AccessInstall
+        {
+            public string ProgId;
+            public string ExePath;
+            public string Source;
+            public RegistryView View;
+        }
+
         public static bool OpenReport(string databasePath, string reportName, bool print)
         {
             object access = null;
+            string fullPath = null;
             try
             {
-                if (!File.Exists(databasePath))
+                if (string.IsNullOrWhiteSpace(databasePath))
                 {
-                    MessageBox.Show("Файл базы данных не найден:\n" + databasePath, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Путь к базе данных не задан.", "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppLog.Info("Отчет не открыт: путь к базе данных пустой.");
                     return false;
                 }
-                Type type = Type.GetTypeFromProgID("Access.Application");
+
+                fullPath = Path.GetFullPath(databasePath);
+                if (!File.Exists(fullPath))
+                {
+                    MessageBox.Show("Файл базы данных не найден:\n" + fullPath, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppLog.Info("Отчет не открыт: файл базы не найден: " + fullPath);
+                    return false;
+                }
+
+                AccessInstall install = FindAccessInstallation();
+                Type type = ResolveAccessComType(install);
                 if (type == null)
                 {
-                    MessageBox.Show("Microsoft Access не найден. Отчет можно открыть вручную из базы данных.", "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppLog.Info("COM-сервер Access.Application не найден. " + DescribeInstall(install));
+                    if (install != null && !string.IsNullOrWhiteSpace(install.ExePath) && File.Exists(install.ExePath))
+                    {
+                        StartAccessDatabase(install.ExePath, fullPath);
+                        MessageBox.Show(
+                            "Microsoft Access найден, но COM-автоматизация отчетов недоступна.\n" +
+                            "База открыта в Access. Откройте отчет вручную: " + reportName + "\n\n" +
+                            "Подробности: " + AppLog.LogPath,
+                            "Отчет",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        return true;
+                    }
+
+                    MessageBox.Show(
+                        "Microsoft Access не установлен или не зарегистрирован для автоматического открытия отчетов.\n" +
+                        "Ложный запуск отчета не выполнялся. Подробности записаны в:\n" + AppLog.LogPath,
+                        "Отчет",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
                     return false;
                 }
+
+                AppLog.Info("Открытие отчета " + reportName + " из базы " + fullPath + ". " + DescribeInstall(install));
                 access = Activator.CreateInstance(type);
                 type.InvokeMember("Visible", System.Reflection.BindingFlags.SetProperty, null, access, new object[] { true });
-                type.InvokeMember("OpenCurrentDatabase", System.Reflection.BindingFlags.InvokeMethod, null, access, new object[] { databasePath });
+                type.InvokeMember("OpenCurrentDatabase", System.Reflection.BindingFlags.InvokeMethod, null, access, new object[] { fullPath, false });
+                VerifyCurrentDatabase(type, access, fullPath);
+
                 object doCmd = type.InvokeMember("DoCmd", System.Reflection.BindingFlags.GetProperty, null, access, null);
                 Type doCmdType = doCmd.GetType();
                 int view = print ? 0 : 2;
@@ -3676,18 +3934,182 @@ internal sealed class PrintOptionsForm : Form
                     type.InvokeMember("CloseCurrentDatabase", System.Reflection.BindingFlags.InvokeMethod, null, access, null);
                     type.InvokeMember("Quit", System.Reflection.BindingFlags.InvokeMethod, null, access, null);
                     Marshal.ReleaseComObject(access);
+                    access = null;
                 }
+                AppLog.Info("Отчет успешно открыт: " + reportName + ".");
                 return true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Не удалось открыть или напечатать отчет.\n\n" + ex.Message, "Отчет", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                AppLog.Error("Не удалось открыть или напечатать отчет " + reportName + " из базы " + (fullPath ?? databasePath) + ".", ex);
+                MessageBox.Show(
+                    "Не удалось открыть или напечатать отчет.\n\n" +
+                    "База: " + (fullPath ?? databasePath) + "\n" +
+                    "Отчет: " + reportName + "\n" +
+                    "Причина: " + ex.Message + "\n\n" +
+                    "Подробности записаны в: " + AppLog.LogPath,
+                    "Отчет",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Exclamation);
+                return false;
+            }
+            finally
+            {
                 if (access != null)
                 {
                     try { Marshal.ReleaseComObject(access); } catch { }
                 }
-                return false;
             }
+        }
+
+        private static Type ResolveAccessComType(AccessInstall install)
+        {
+            Type type = Type.GetTypeFromProgID("Access.Application");
+            if (type != null) return type;
+            if (install != null && !string.IsNullOrWhiteSpace(install.ProgId))
+            {
+                try { return Type.GetTypeFromProgID(install.ProgId); } catch { }
+            }
+            return null;
+        }
+
+        private static void VerifyCurrentDatabase(Type accessType, object access, string expectedPath)
+        {
+            try
+            {
+                object currentProject = accessType.InvokeMember("CurrentProject", System.Reflection.BindingFlags.GetProperty, null, access, null);
+                string actualPath = Convert.ToString(currentProject.GetType().InvokeMember("FullName", System.Reflection.BindingFlags.GetProperty, null, currentProject, null));
+                if (!string.Equals(Path.GetFullPath(actualPath), Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Access открыл другую базу данных: " + actualPath);
+                }
+                AppLog.Info("Access подтвердил текущую базу: " + actualPath);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Не удалось подтвердить, что отчет открыт из выбранной базы: " + expectedPath, ex);
+            }
+        }
+
+        private static AccessInstall FindAccessInstallation()
+        {
+            List<AccessInstall> found = new List<AccessInstall>();
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                AddProgIdInstall(found, view, "Access.Application");
+                AddProgIdInstall(found, view, "Access.Application.16");
+                AddProgIdInstall(found, view, "Access.Application.15");
+                AddProgIdInstall(found, view, "Access.Application.14");
+                AddAppPathInstall(found, view);
+                AddOfficeRootInstalls(found, view);
+            }
+
+            foreach (string path in KnownAccessPaths())
+            {
+                if (File.Exists(path))
+                {
+                    found.Add(new AccessInstall { ExePath = path, Source = "known path", View = RegistryView.Default });
+                }
+            }
+
+            foreach (AccessInstall install in found)
+            {
+                if (!string.IsNullOrWhiteSpace(install.ExePath) && File.Exists(install.ExePath))
+                {
+                    return install;
+                }
+            }
+            return found.Count > 0 ? found[0] : null;
+        }
+
+        private static void AddProgIdInstall(List<AccessInstall> found, RegistryView view, string progId)
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, view))
+                using (RegistryKey key = root.OpenSubKey(progId + @"\CLSID"))
+                {
+                    if (key != null)
+                    {
+                        found.Add(new AccessInstall { ProgId = progId, Source = progId + " CLSID", View = view });
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Info("Ошибка чтения ProgID Access в реестре " + view + ": " + ex.Message); }
+        }
+
+        private static void AddAppPathInstall(List<AccessInstall> found, RegistryView view)
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\MSACCESS.EXE"))
+                {
+                    string exe = key == null ? null : Convert.ToString(key.GetValue(null));
+                    if (!string.IsNullOrWhiteSpace(exe))
+                    {
+                        found.Add(new AccessInstall { ExePath = Environment.ExpandEnvironmentVariables(exe.Trim('"')), Source = "App Paths", View = view });
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Info("Ошибка чтения App Paths MSACCESS.EXE в реестре " + view + ": " + ex.Message); }
+        }
+
+        private static void AddOfficeRootInstalls(List<AccessInstall> found, RegistryView view)
+        {
+            foreach (string version in new[] { "16.0", "15.0", "14.0" })
+            {
+                try
+                {
+                    using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                    using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Office\" + version + @"\Common\InstallRoot"))
+                    {
+                        string path = key == null ? null : Convert.ToString(key.GetValue("Path"));
+                        if (!string.IsNullOrWhiteSpace(path))
+                        {
+                            found.Add(new AccessInstall { ExePath = Path.Combine(path, "MSACCESS.EXE"), Source = "Office " + version + " InstallRoot", View = view });
+                        }
+                    }
+                }
+                catch (Exception ex) { AppLog.Info("Ошибка чтения Office " + version + " InstallRoot в реестре " + view + ": " + ex.Message); }
+            }
+        }
+
+        private static IEnumerable<string> KnownAccessPaths()
+        {
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string pfx86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            foreach (string root in new[] { pf, pfx86 })
+            {
+                if (string.IsNullOrWhiteSpace(root)) continue;
+                foreach (string office in new[] { "Office16", "Office15", "Office14" })
+                {
+                    yield return Path.Combine(root, "Microsoft Office", office, "MSACCESS.EXE");
+                    yield return Path.Combine(root, "Microsoft Office", "root", office, "MSACCESS.EXE");
+                }
+            }
+        }
+
+        private static string DescribeInstall(AccessInstall install)
+        {
+            if (install == null) return "Сведения об установке Access не найдены.";
+            return "Access: ProgID=" + (install.ProgId ?? "-") + ", EXE=" + (install.ExePath ?? "-") + ", Source=" + (install.Source ?? "-") + ", View=" + install.View + ".";
+        }
+
+        private static void StartAccessDatabase(string exePath, string databasePath)
+        {
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = exePath;
+            startInfo.Arguments = Quote(databasePath);
+            startInfo.UseShellExecute = false;
+            startInfo.WorkingDirectory = Path.GetDirectoryName(exePath);
+            Process.Start(startInfo);
+            AppLog.Info("База открыта через MSACCESS.EXE без COM: " + databasePath);
+        }
+
+        private static string Quote(string value)
+        {
+            return "\"" + value.Replace("\"", "\\\"") + "\"";
         }
     }
 
