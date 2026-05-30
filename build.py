@@ -1,15 +1,37 @@
-
 #!/usr/bin/env python3
 """
-Healthcare Application Builder
-Builds launcher, x86/x64 hosts, shared module, and installer.
+Healthcare Application Builder.
+
+Builds launcher, x86/x64 hosts, shared module, and optional installer.
+The script keeps the existing csc.exe workflow, but centralizes compiler
+settings so release flags and references stay consistent across artifacts.
 """
 
+import argparse
 import os
-import sys
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+APP_NAME = "HealthcareSanatoriumInterface"
+MODULE_NAME = "HealthcareModules.dll"
+DATABASE_NAME = "HealthcareSanatoriumSystem.accdb"
+DOCS = ("UserGuide.txt", "UserGuide.rtf", "UserGuide.pdf")
+PAYLOAD_FILES = (
+    f"{APP_NAME}.exe",
+    f"{APP_NAME}.x86.exe",
+    f"{APP_NAME}.x64.exe",
+    MODULE_NAME,
+    DATABASE_NAME,
+) + DOCS
+COMMON_REFERENCES = (
+    "System.dll",
+    "System.Core.dll",
+    "System.Data.dll",
+    "System.Drawing.dll",
+    "System.Windows.Forms.dll",
+)
 
 
 def find_csc():
@@ -31,23 +53,91 @@ def find_csc():
 def run(cmd):
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr or result.stdout or "Compiler failed")
+        output = (result.stderr or result.stdout or "Compiler failed").strip()
+        raise RuntimeError(output)
     return result
 
 
 def copy_if_exists(src, dst):
-    if os.path.exists(src):
+    src = Path(src)
+    if src.exists():
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         return True
     return False
 
 
-def main():
+def compiler_args(csc, target, output, sources, icon=None, platform=None, references=COMMON_REFERENCES, resources=()):
+    args = [
+        csc,
+        "/nologo",
+        f"/target:{target}",
+        "/optimize+",
+        "/codepage:65001",
+        "/warn:4",
+        "/nowarn:1591",
+        "/out:" + str(output),
+    ]
+    if platform:
+        args.append(f"/platform:{platform}")
+    if icon:
+        args.append("/win32icon:" + str(icon))
+    args.extend("/reference:" + reference for reference in references)
+    args.extend(resources)
+    args.extend(str(source) for source in sources)
+    return args
+
+
+def compile_artifact(csc, label, target, output, sources, icon=None, platform=None, resources=(), references=COMMON_REFERENCES):
+    print(label)
+    run(compiler_args(csc, target, output, sources, icon=icon, platform=platform, resources=resources, references=references))
+
+
+def prepare_assets(root, build):
+    icon_src = root / "assest" / "app_icon.ico"
+    db_src = root / "assest" / "db.accdb"
+    db_fixed = build / "HealthcareSanatoriumSystem_FIXED.accdb"
+
+    if not icon_src.exists():
+        raise FileNotFoundError("app_icon.ico not found")
+
+    shutil.copy2(icon_src, build / "app_icon.ico")
+    db_target = build / DATABASE_NAME
+    if db_src.exists():
+        shutil.copy2(db_src, db_target)
+    elif db_fixed.exists():
+        shutil.copy2(db_fixed, db_target)
+    else:
+        raise FileNotFoundError("Access database not found")
+
+    for doc in DOCS:
+        copy_if_exists(root / "docs" / doc, build / doc)
+
+    return icon_src
+
+
+def copy_payload(build, payload):
+    copied = []
+    for file_name in PAYLOAD_FILES:
+        if copy_if_exists(build / file_name, payload / file_name):
+            copied.append(file_name)
+    return copied
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(description="Build Healthcare Sanatorium Windows Forms package.")
+    parser.add_argument("--clean", action="store_true", help="remove build/dist output before compiling")
+    parser.add_argument("--no-installer", action="store_true", help="skip optional installer compilation")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv or sys.argv[1:])
     root = Path(__file__).resolve().parent
     os.chdir(root)
 
     print("\n" + "=" * 54)
-    print("Healthcare Application Builder v3.0")
+    print("Healthcare Application Builder v3.1")
     print("=" * 54 + "\n")
 
     csc = find_csc()
@@ -59,122 +149,69 @@ def main():
     dist = root / "dist"
     payload = dist / "payload"
 
+    if args.clean:
+        shutil.rmtree(build, ignore_errors=True)
+        shutil.rmtree(dist, ignore_errors=True)
+
     build.mkdir(parents=True, exist_ok=True)
     payload.mkdir(parents=True, exist_ok=True)
 
-    icon_src = root / "assest" / "app_icon.ico"
-    db_src = root / "assest" / "db.accdb"
-    db_fixed = build / "HealthcareSanatoriumSystem_FIXED.accdb"
+    icon_src = prepare_assets(root, build)
 
-    if not icon_src.exists():
-        print("ERROR: app_icon.ico not found")
-        return 1
-
-    shutil.copy2(icon_src, build / "app_icon.ico")
-    db_target = build / "HealthcareSanatoriumSystem.accdb"
-    if db_src.exists():
-        shutil.copy2(db_src, db_target)
-    elif db_fixed.exists():
-        shutil.copy2(db_fixed, db_target)
-    else:
-        print("ERROR: Access database not found")
-        return 1
-
-    print("[1/5] Compiling shared module...")
-    run([
-        csc, "/nologo", "/target:library", "/optimize+", "/codepage:65001",
-        "/out:" + str(build / "HealthcareModules.dll"),
-        "/reference:System.dll",
-        "/reference:System.Core.dll",
-        "/reference:System.Data.dll",
-        "/reference:System.Drawing.dll",
-        "/reference:System.Windows.Forms.dll",
-        str(root / "src" / "HealthcareInterface.cs"),
-    ])
-
-    print("[2/5] Compiling x86 host...")
-    run([
-        csc, "/nologo", "/platform:x86", "/target:winexe", "/optimize+", "/codepage:65001",
-        "/out:" + str(build / "HealthcareSanatoriumInterface.x86.exe"),
-        "/win32icon:" + str(icon_src),
-        "/reference:System.dll",
-        "/reference:System.Core.dll",
-        "/reference:System.Data.dll",
-        "/reference:System.Drawing.dll",
-        "/reference:System.Windows.Forms.dll",
-        str(root / "src" / "HostProgram.cs"),
-    ])
-
-    print("[3/5] Compiling x64 host...")
-    run([
-        csc, "/nologo", "/platform:x64", "/target:winexe", "/optimize+", "/codepage:65001",
-        "/out:" + str(build / "HealthcareSanatoriumInterface.x64.exe"),
-        "/win32icon:" + str(icon_src),
-        "/reference:System.dll",
-        "/reference:System.Core.dll",
-        "/reference:System.Data.dll",
-        "/reference:System.Drawing.dll",
-        "/reference:System.Windows.Forms.dll",
-        str(root / "src" / "HostProgram.cs"),
-    ])
-
-    print("[4/5] Compiling launcher...")
-    run([
-        csc, "/nologo", "/target:winexe", "/optimize+", "/codepage:65001",
-        "/out:" + str(build / "HealthcareSanatoriumInterface.exe"),
-        "/win32icon:" + str(icon_src),
-        "/reference:System.dll",
-        "/reference:System.Core.dll",
-        "/reference:System.Data.dll",
-        "/reference:System.Drawing.dll",
-        "/reference:System.Windows.Forms.dll",
-        str(root / "src" / "Launcher.cs"),
-    ])
+    compile_artifact(
+        csc,
+        "[1/5] Compiling shared module...",
+        "library",
+        build / MODULE_NAME,
+        [root / "src" / "HealthcareInterface.cs"],
+    )
+    compile_artifact(
+        csc,
+        "[2/5] Compiling x86 host...",
+        "winexe",
+        build / f"{APP_NAME}.x86.exe",
+        [root / "src" / "HostProgram.cs"],
+        icon=icon_src,
+        platform="x86",
+    )
+    compile_artifact(
+        csc,
+        "[3/5] Compiling x64 host...",
+        "winexe",
+        build / f"{APP_NAME}.x64.exe",
+        [root / "src" / "HostProgram.cs"],
+        icon=icon_src,
+        platform="x64",
+    )
+    compile_artifact(
+        csc,
+        "[4/5] Compiling launcher...",
+        "winexe",
+        build / f"{APP_NAME}.exe",
+        [root / "src" / "Launcher.cs"],
+        icon=icon_src,
+    )
 
     print("[5/5] Copying docs and packaging installer...")
-    for doc in ("UserGuide.txt", "UserGuide.rtf", "UserGuide.pdf"):
-        src = root / "docs" / doc
-        if src.exists():
-            shutil.copy2(src, build / doc)
-
-    for file_name in (
-        "HealthcareSanatoriumInterface.exe",
-        "HealthcareSanatoriumInterface.x86.exe",
-        "HealthcareSanatoriumInterface.x64.exe",
-        "HealthcareModules.dll",
-        "HealthcareSanatoriumSystem.accdb",
-        "UserGuide.txt",
-        "UserGuide.rtf",
-        "UserGuide.pdf",
-    ):
-        src = build / file_name
-        if src.exists():
-            shutil.copy2(src, payload / file_name)
-
-    setup_resources = [f"/resource:{payload / f},{f}" for f in (
-        "HealthcareSanatoriumInterface.exe",
-        "HealthcareSanatoriumInterface.x86.exe",
-        "HealthcareSanatoriumInterface.x64.exe",
-        "HealthcareModules.dll",
-        "HealthcareSanatoriumSystem.accdb",
-        "UserGuide.txt",
-        "UserGuide.rtf",
-        "UserGuide.pdf",
-    ) if (payload / f).exists()]
+    copied_payload = copy_payload(build, payload)
+    setup_resources = [f"/resource:{payload / name},{name}" for name in copied_payload]
 
     setup_host = root / "installer" / "SetupHost.cs"
     installer_built = False
-    if setup_host.exists():
-        run([
-            csc, "/nologo", "/target:winexe", "/optimize+", "/codepage:65001",
-            "/out:" + str(dist / "Setup.exe"),
-            "/win32icon:" + str(icon_src),
-            "/reference:System.dll",
-            "/reference:System.Core.dll",
-            "/reference:System.Drawing.dll",
-            "/reference:System.Windows.Forms.dll",
-        ] + setup_resources + [str(setup_host)])
+    if not args.no_installer and setup_host.exists():
+        compile_artifact(
+            csc,
+            "      Compiling installer...",
+            "winexe",
+            dist / "Setup.exe",
+            [setup_host],
+            icon=icon_src,
+            resources=setup_resources,
+            references=("System.dll", "System.Core.dll", "System.Drawing.dll", "System.Windows.Forms.dll"),
+        )
         installer_built = True
+    elif args.no_installer:
+        print("INFO: installer build skipped by --no-installer.")
     else:
         print("INFO: installer/SetupHost.cs not found; installer build skipped.")
 
@@ -183,13 +220,13 @@ def main():
     print("\n" + "=" * 54)
     print("BUILD SUCCESSFUL!")
     print("=" * 54)
-    print(f"Launcher:   {build / 'HealthcareSanatoriumInterface.exe'}")
-    print(f"x86 host:   {build / 'HealthcareSanatoriumInterface.x86.exe'}")
-    print(f"x64 host:   {build / 'HealthcareSanatoriumInterface.x64.exe'}")
+    print(f"Launcher:   {build / (APP_NAME + '.exe')}")
+    print(f"x86 host:   {build / (APP_NAME + '.x86.exe')}")
+    print(f"x64 host:   {build / (APP_NAME + '.x64.exe')}")
     if installer_built:
-        print(f"Installer:   {dist / 'Setup.exe'}")
+        print(f"Installer:  {dist / 'Setup.exe'}")
     else:
-        print("Installer:   skipped (installer/SetupHost.cs not found)")
+        print("Installer:  skipped")
     return 0
 
 
