@@ -393,7 +393,7 @@ internal static class ReportSql
 {
     public const string VoucherIssuesDetailed =
         "SELECT vi.VoucherNo, vi.IssueDate, " +
-        "p.LastName & ' ' & p.FirstName & IIf(Len(p.MiddleName & '')=0, '', ' ' & p.MiddleName) AS PensionerFullName, " +
+        "p.LastName & ' ' & p.FirstName & IIf(IsNull(p.MiddleName) Or p.MiddleName='', '', ' ' & p.MiddleName) AS PensionerFullName, " +
         "r.RegionName AS PensionerRegion, sr.RegionName AS SanatoriumRegion, s.SanatoriumName, vi.StartDate, vi.EndDate, " +
         "DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1 AS DaysCount, " +
         "(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay] AS TotalCost, " +
@@ -669,25 +669,42 @@ public sealed class DbContext
 
         try
         {
-            AppLog.Info("Проверка SQL-цепочки отчетов без изменения файла БД: " + Path.GetFullPath(DatabasePath));
-            ScalarInt("SELECT Count(*) FROM tblVoucherIssues");
-            ScalarInt("SELECT Count(*) FROM tblPensioners");
-            ScalarInt("SELECT Count(*) FROM tblSanatoriums");
-            using (DataTable table = Query(ReportSql.SelectVoucherIssuesDetailed("TOP 1 VoucherNo", "IssueDate DESC, VoucherNo")))
-            {
-                AppLog.Info("Встроенный SQL журнала путевок проверен. Строк: " + table.Rows.Count + ".");
-            }
-            using (DataTable table = Query(ReportSql.SelectTotalsBySanatorium("TOP 1 SanatoriumName, VoucherCount", "SanatoriumRegion, SanatoriumName")))
-            {
-                AppLog.Info("Встроенный SQL итогов по санаториям проверен. Строк: " + table.Rows.Count + ".");
-            }
+            AppLog.Info("Проверка совместимости сохраненных Access-запросов для отчетов: " + Path.GetFullPath(DatabasePath));
+            ReplaceSavedQuery("qryReport_VoucherIssuesDetailed", ReportSql.VoucherIssuesDetailed);
+            ReplaceSavedQuery("qry02_Calculated_VoucherCostAndAge", ReportSql.VoucherIssuesDetailed);
+            ReplaceSavedQuery("qry01_Selection_ActiveVoucherIssues", ReportSql.VoucherIssuesDetailed + " WHERE vs.StatusName <> 'Отменена'");
+            ReplaceSavedQuery("qry04_Totals_BySanatorium", ReportSql.TotalsBySanatorium);
+            AppLog.Info("Проверка сохраненных Access-запросов завершена.");
         }
         catch (Exception ex)
         {
-            AppLog.Error("Проверка SQL-цепочки отчетов завершилась ошибкой. Файл БД не изменялся.", ex);
+            AppLog.Error("Не удалось автоматически обновить сохраненные Access-запросы. Работа приложения продолжится с встроенными SQL-запросами без Nz().", ex);
         }
     }
 
+    private void ReplaceSavedQuery(string queryName, string selectSql)
+    {
+        string safeName = "[" + queryName.Replace("]", "]]" ) + "]";
+        try
+        {
+            Execute("DROP VIEW " + safeName);
+            AppLog.Info("Удален устаревший сохраненный запрос " + queryName + ".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info("Сохраненный запрос " + queryName + " не был удален перед обновлением: " + ex.Message);
+        }
+
+        try
+        {
+            Execute("CREATE VIEW " + safeName + " AS " + selectSql);
+            AppLog.Info("Создан совместимый сохраненный запрос " + queryName + ".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Не удалось создать сохраненный запрос " + queryName + ".", ex);
+        }
+    }
 }
 
 
@@ -3889,7 +3906,7 @@ internal sealed class PrintOptionsForm : Form
                             "Отчет",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Information);
-                        return false;
+                        return true;
                     }
 
                     MessageBox.Show(
@@ -3977,11 +3994,7 @@ internal sealed class PrintOptionsForm : Form
         private static AccessInstall FindAccessInstallation()
         {
             List<AccessInstall> found = new List<AccessInstall>();
-            RegistryView[] views = IntPtr.Size == 8
-                ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
-                : new[] { RegistryView.Registry32, RegistryView.Registry64 };
-
-            foreach (RegistryView view in views)
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
             {
                 AddProgIdInstall(found, view, "Access.Application");
                 AddProgIdInstall(found, view, "Access.Application.16");
