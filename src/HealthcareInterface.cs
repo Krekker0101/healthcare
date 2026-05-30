@@ -48,7 +48,7 @@ namespace HealthcareSanatoriumInterface
                 {
                     DbContext testDb = new DbContext(dbPath);
                     if (!testDb.Exists()) Environment.Exit(2);
-                    DataTable table = testDb.Query("SELECT TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+                    DataTable table = ReportTables.Vouchers(testDb);
                     string testPdf = Path.Combine(baseDir, "pdf-self-test.pdf");
                     ProfessionalPdfExporter.ExportDataTableToFile(testPdf, "Тестовый PDF-отчет", "Система здравоохранения", table);
                     FileInfo info = new FileInfo(testPdf);
@@ -261,6 +261,7 @@ internal static class ErrorLogger
 internal static class Debouncer
 {
     private static readonly Dictionary<string, System.Windows.Forms.Timer> Timers = new Dictionary<string, System.Windows.Forms.Timer>();
+    private static readonly int MaxTimersCached = 16;
 
     public static void Debounce(string key, System.Action action, int delayMs = 300)
     {
@@ -269,8 +270,13 @@ internal static class Debouncer
         {
             existing.Stop();
             existing.Dispose();
-            Timers.Remove(key);
         }
+
+        if (Timers.Count > MaxTimersCached)
+        {
+            Timers.Clear();
+        }
+
         System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         timer.Interval = delayMs;
         timer.Tick += delegate
@@ -360,6 +366,7 @@ public sealed class DbContext
     private static readonly string[] MdbProviders = new[] { "Microsoft.Jet.OLEDB.4.0", "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0" };
     private string resolvedProvider;
     private string lastProviderError;
+    private string cachedConnectionString;
     private readonly object syncRoot = new object();
     private readonly Dictionary<string, DataTable> lookupCache = new Dictionary<string, DataTable>();
     private readonly object cacheLock = new object();
@@ -383,6 +390,7 @@ public sealed class DbContext
             DatabasePath = path;
             resolvedProvider = null;
             lastProviderError = null;
+            cachedConnectionString = null;
             ClearLookupCache();
         }
     }
@@ -472,13 +480,22 @@ public sealed class DbContext
             throw new FileNotFoundException("Файл базы данных не найден", DatabasePath);
         }
 
-        string provider = ResolveProvider();
-        if (string.IsNullOrWhiteSpace(provider))
+        string connectionString;
+        lock (syncRoot)
         {
-            throw new InvalidOperationException(BuildProviderError());
+            if (cachedConnectionString == null)
+            {
+                string provider = ResolveProvider();
+                if (string.IsNullOrWhiteSpace(provider))
+                {
+                    throw new InvalidOperationException(BuildProviderError());
+                }
+                cachedConnectionString = BuildConnectionString(provider);
+            }
+            connectionString = cachedConnectionString;
         }
 
-        OleDbConnection connection = new OleDbConnection(BuildConnectionString(provider));
+        OleDbConnection connection = new OleDbConnection(connectionString);
         try
         {
             connection.Open();
@@ -487,7 +504,7 @@ public sealed class DbContext
         catch (Exception ex)
         {
             connection.Dispose();
-            throw new InvalidOperationException(BuildConnectionError(provider, ex), ex);
+            throw new InvalidOperationException(BuildConnectionError("", ex), ex);
         }
     }
 
@@ -670,19 +687,11 @@ public class GlassForm : Form
 
     private void PaintCachedBackground(Graphics graphics)
     {
+        // Simplified background: single solid fill for performance and stability
         Rectangle bounds = new Rectangle(Point.Empty, ClientSize);
-        Color from = Theme.Dark ? Color.FromArgb(11, 16, 26) : Color.FromArgb(235, 242, 252);
-        Color to = Theme.Dark ? Color.FromArgb(25, 34, 52) : Color.FromArgb(250, 252, 255);
-        using (LinearGradientBrush brush = new LinearGradientBrush(bounds, from, to, 45f))
+        using (SolidBrush brush = new SolidBrush(Theme.Surface))
         {
             graphics.FillRectangle(brush, bounds);
-        }
-
-        using (SolidBrush blue = new SolidBrush(Theme.Dark ? Color.FromArgb(58, 74, 144, 255) : Color.FromArgb(42, 0, 122, 255)))
-        using (SolidBrush green = new SolidBrush(Theme.Dark ? Color.FromArgb(42, 61, 220, 132) : Color.FromArgb(32, 52, 199, 89)))
-        {
-            graphics.FillEllipse(blue, ClientSize.Width - 320, -90, 420, 260);
-            graphics.FillEllipse(green, -120, ClientSize.Height - 220, 340, 260);
         }
     }
 
@@ -755,17 +764,6 @@ public class GlassForm : Form
 
     protected static FlowLayoutPanel MakeHeaderButtons()
     {
-<<<<<<< HEAD
-        combo.BeginUpdate();
-        try
-        {
-            combo.Items.Clear();
-            if (addAll)
-            {
-                combo.Items.Add(new LookupItem(0, "Все"));
-            }
-
-=======
         FlowLayoutPanel f = new FlowLayoutPanel();
         f.AutoSize = true;
         f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -845,7 +843,6 @@ public class GlassForm : Form
                 combo.Items.Add(new LookupItem(0, allLabel));
             }
 
->>>>>>> c092d92 (Update repository with latest local changes)
             foreach (DataRow row in table.Rows)
             {
                 combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
@@ -1273,12 +1270,7 @@ internal sealed class MainForm : GlassForm
 
         Button allPdf = new GlassButton();
         allPdf.Text = "PDF: все таблицы";
-<<<<<<< HEAD
-        allPdf.SetBounds(0, 0, 170, 42);
-=======
-        allPdf.Size = new Size(162, 40);
->>>>>>> c092d92 (Update repository with latest local changes)
-        Theme.StyleButton(allPdf, true);
+        allPdf.Size = new Size(162, 40);        Theme.StyleButton(allPdf, true);
         allPdf.Click += delegate { ExportAllTablesPdf(); };
         manualBar.Controls.Add(allPdf);
 
@@ -1367,10 +1359,19 @@ internal sealed class MainForm : GlassForm
     {
         Guard(delegate
         {
-            int pensioners = Db.ScalarInt("SELECT Count(*) FROM tblPensioners");
-            int vouchers = Db.ScalarInt("SELECT Count(*) FROM tblVoucherIssues");
-            int sanatoriums = Db.ScalarInt("SELECT Count(*) FROM tblSanatoriums");
-            stats.Text = pensioners + " пенсионеров  ·  " + vouchers + " путевок  ·  " + sanatoriums + " санаториев";
+            DataTable dt = Db.Query(
+                "SELECT " +
+                "(SELECT Count(*) FROM tblPensioners) AS pensioners, " +
+                "(SELECT Count(*) FROM tblVoucherIssues) AS vouchers, " +
+                "(SELECT Count(*) FROM tblSanatoriums) AS sanatoriums");
+
+            if (dt.Rows.Count > 0)
+            {
+                int pensioners = Convert.ToInt32(dt.Rows[0]["pensioners"]);
+                int vouchers = Convert.ToInt32(dt.Rows[0]["vouchers"]);
+                int sanatoriums = Convert.ToInt32(dt.Rows[0]["sanatoriums"]);
+                stats.Text = pensioners + " пенсионеров  ·  " + vouchers + " путевок  ·  " + sanatoriums + " санаториев";
+            }
         });
     }
 
@@ -1516,47 +1517,10 @@ internal sealed class MainForm : GlassForm
             onlyWithVouchers.Text = "Только с путевками";
             onlyWithVouchers.AutoSize = true;
             onlyWithVouchers.BackColor = Color.Transparent;
-<<<<<<< HEAD
-            panel.Controls.Add(onlyWithVouchers);
-
-            Button load = new GlassButton();
-            load.Text = "Обновить";
-            load.SetBounds(766, 84, 124, 38);
-            load.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(load, true);
-            load.Click += delegate { LoadGrid(); };
-            panel.Controls.Add(load);
-
-            Button exportPdf = new GlassButton();
-            exportPdf.Text = "PDF";
-            exportPdf.SetBounds(904, 84, 114, 38);
-            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(exportPdf, false);
-            exportPdf.Click += delegate { ExportPdf(); };
-            panel.Controls.Add(exportPdf);
-
-            Button add = new GlassButton();
-            add.Text = "Добавить";
-            add.SetBounds(28, 552, 132, 40);
-            add.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(add, true);
-            add.Click += AddPensioner;
-            panel.Controls.Add(add);
-
-            Button delete = new GlassButton();
-            delete.Text = "Удалить";
-            delete.SetBounds(174, 552, 132, 40);
-            delete.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(delete, false);
-            delete.Click += DeletePensioner;
-            panel.Controls.Add(delete);
-=======
             onlyWithVouchers.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(search);
             filters.Controls.Add(region);
             filters.Controls.Add(onlyWithVouchers);
->>>>>>> c092d92 (Update repository with latest local changes)
-
             // Grid
             grid = new DataGridView();
             grid.Margin = new Padding(0, 0, 0, 10);
@@ -1586,12 +1550,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-<<<<<<< HEAD
-                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
-=======
-                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
->>>>>>> c092d92 (Update repository with latest local changes)
-                    LoadGrid();
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");                    LoadGrid();
                 });
             };
             search.TextChanged += delegate { Debouncer.Debounce("pensioners_search", LoadGrid, 350); };
@@ -1775,14 +1734,8 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-<<<<<<< HEAD
-                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
-                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
-=======
                     FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
-                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true, "Статус: все");
->>>>>>> c092d92 (Update repository with latest local changes)
-                    LoadGrid();
+                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true, "Статус: все");                    LoadGrid();
                 });
             };
             region.SelectedIndexChanged += delegate { Debouncer.Debounce("vouchers_region", LoadGrid, 200); };
@@ -1903,12 +1856,12 @@ internal sealed class MainForm : GlassForm
                         bool saved = false;
                         if (options.Target == PrintTarget.AccessJournal)
                         {
-                            DataTable table = Db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+                            DataTable table = ReportTables.Vouchers(Db);
                             saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Журнал регистрации выдачи путевок", "Система здравоохранения", table, "journal_vouchers.pdf");
                         }
                         else if (options.Target == PrintTarget.AccessRegionTotals)
                         {
-                            DataTable table = Db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
+                            DataTable table = ReportTables.RegionTotals(Db);
                             saved = ProfessionalPdfExporter.ExportDataTableWithDialog(this, "Итоги по санаториям и регионам", "Система здравоохранения", table, "region_totals.pdf");
                         }
                         else if (options.Target == PrintTarget.VisibleGrid)
@@ -1996,47 +1949,8 @@ internal sealed class MainForm : GlassForm
             onlyActive.Checked = true;
             onlyActive.AutoSize = true;
             onlyActive.BackColor = Color.Transparent;
-<<<<<<< HEAD
-            onlyActive.SetBounds(326, 88, 190, 30);
-            onlyActive.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            panel.Controls.Add(onlyActive);
-
-            Button load = new GlassButton();
-            load.Text = "Обновить";
-            load.SetBounds(536, 84, 124, 38);
-            load.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(load, true);
-            load.Click += delegate { LoadGrid(); };
-            panel.Controls.Add(load);
-
-            Button exportPdf = new GlassButton();
-            exportPdf.Text = "PDF";
-            exportPdf.SetBounds(674, 84, 114, 38);
-            exportPdf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(exportPdf, false);
-            exportPdf.Click += delegate { ExportPdf(); };
-            panel.Controls.Add(exportPdf);
-
-            Button add = new GlassButton();
-            add.Text = "Добавить";
-            add.SetBounds(28, 520, 132, 40);
-            add.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(add, true);
-            add.Click += AddSanatorium;
-            panel.Controls.Add(add);
-
-            Button delete = new GlassButton();
-            delete.Text = "Удалить";
-            delete.SetBounds(174, 520, 132, 40);
-            delete.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(delete, false);
-            delete.Click += DeleteSanatorium;
-            panel.Controls.Add(delete);
-=======
             onlyActive.Margin = new Padding(4, 6, 0, 4);
             filters.Controls.Add(profile); filters.Controls.Add(onlyActive);
->>>>>>> c092d92 (Update repository with latest local changes)
-
             // Grid
             grid = new DataGridView();
             grid.Margin = new Padding(0, 0, 0, 10);
@@ -2066,12 +1980,7 @@ internal sealed class MainForm : GlassForm
             {
                 Guard(delegate
                 {
-<<<<<<< HEAD
-                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
-=======
-                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true, "Профиль: все");
->>>>>>> c092d92 (Update repository with latest local changes)
-                    LoadGrid();
+                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true, "Профиль: все");                    LoadGrid();
                 });
             };
             profile.SelectedIndexChanged += delegate { Debouncer.Debounce("sanatoriums_profile", LoadGrid, 200); };
@@ -2425,10 +2334,7 @@ internal abstract class RecordFormBase : GlassForm
         public PensionerEditForm(DbContext db, int editId = 0)
             : base(db, editId == 0 ? "Добавление пенсионера" : "Редактирование пенсионера", new Size(720, 690))
         {
-<<<<<<< HEAD
-=======
             this.editId = editId;
->>>>>>> c092d92 (Update repository with latest local changes)
             region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             category = AddLookup("Категория", Db.LookupCached("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
             last = AddText("Фамилия *", "", 330);
@@ -2641,11 +2547,7 @@ internal abstract class RecordFormBase : GlassForm
         public SanatoriumEditForm(DbContext db, int editId = 0)
             : base(db, editId == 0 ? "Добавление санатория" : "Редактирование санатория", new Size(720, 600))
         {
-<<<<<<< HEAD
-=======
-            this.editId = editId;
->>>>>>> c092d92 (Update repository with latest local changes)
-            region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
+region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             profile = AddLookup("Профиль", Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
             name = AddText("Санаторий *", "", 360);
             address = AddText("Адрес", "", 390);
@@ -2890,7 +2792,9 @@ internal sealed class DataToolsForm : GlassForm
 
         public static DataTable Vouchers(DbContext db)
         {
-            return db.Query("SELECT VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], PensionerRegion AS [Регион], SanatoriumName AS [Санаторий], StartDate AS [Заезд], EndDate AS [Выезд], DaysCount AS [Дней], TotalCost AS [Стоимость], StatusName AS [Статус] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+            // Use direct SQL from tables instead of relying on a saved Access query object (qryReport_VoucherIssuesDetailed)
+            // This avoids errors when the saved query is missing or requires parameters.
+            return db.Query("SELECT vi.VoucherNo AS [Путевка], vi.IssueDate AS [Регистрация], p.LastName & ' ' & p.FirstName AS [Пенсионер], r.RegionName AS [Регион], s.SanatoriumName AS [Санаторий], vi.StartDate AS [Заезд], vi.EndDate AS [Выезд], DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1 AS [Дней], (DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay] AS [Стоимость], vs.StatusName AS [Статус] FROM (((tblVoucherIssues AS vi INNER JOIN tblPensioners AS p ON vi.PensionerID = p.PensionerID) INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID ORDER BY vi.IssueDate, vi.VoucherNo");
         }
 
         public static DataTable Sanatoriums(DbContext db)
@@ -2900,7 +2804,8 @@ internal sealed class DataToolsForm : GlassForm
 
         public static DataTable RegionTotals(DbContext db)
         {
-            return db.Query("SELECT SanatoriumRegion AS [Регион санатория], SanatoriumName AS [Санаторий], VoucherCount AS [Путевок], TotalDays AS [Дней], TotalPlannedCost AS [Плановая стоимость] FROM qry04_Totals_BySanatorium ORDER BY SanatoriumRegion, SanatoriumName");
+            // Compute totals per sanatorium directly from tables to avoid dependency on saved queries in Access.
+            return db.Query("SELECT r.RegionName AS [Регион санатория], s.SanatoriumName AS [Санаторий], COUNT(vi.IssueID) AS [Путевок], NZ(SUM(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1),0) AS [Дней], NZ(SUM((DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay]),0) AS [Плановая стоимость] FROM (tblVoucherIssues AS vi INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) INNER JOIN tblRegions AS r ON s.RegionID = r.RegionID GROUP BY r.RegionName, s.SanatoriumName ORDER BY r.RegionName, s.SanatoriumName");
         }
     }
 
@@ -3699,7 +3604,7 @@ internal sealed class PrintOptionsForm : Form
                 return 2;
             }
 
-            DataTable table = testDb.Query("SELECT TOP 5 VoucherNo AS [Путевка], IssueDate AS [Регистрация], PensionerFullName AS [Пенсионер], SanatoriumName AS [Санаторий], TotalCost AS [Стоимость] FROM qryReport_VoucherIssuesDetailed ORDER BY IssueDate, VoucherNo");
+            DataTable table = ReportTables.Vouchers(testDb);
             string testPdf = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pdf-self-test.pdf");
             ProfessionalPdfExporter.ExportDataTableToFile(testPdf, "Тестовый PDF-отчет", "Система здравоохранения", table);
 
