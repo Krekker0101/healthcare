@@ -126,7 +126,7 @@ namespace HealthcareSanatoriumInterface
         {
             TextBox box = new TextBox();
             box.Font = BaseFont;
-            box.BorderStyle = BorderStyle.FixedSingle;
+            box.BorderStyle = BorderStyle.Fixed3D;
             box.BackColor = Field;
             box.ForeColor = Ink;
             box.Tag = placeholder;
@@ -179,7 +179,7 @@ namespace HealthcareSanatoriumInterface
                 {
                     Button button = (Button)control;
                     GlassButton glass = button as GlassButton;
-                    StyleButton(button, glass != null ? glass.Primary : button.FlatAppearance.BorderSize == 0);
+                    StyleButton(button, glass != null ? glass.Primary : false);
                 }
                 else if (control is DataGridView)
                 {
@@ -189,6 +189,7 @@ namespace HealthcareSanatoriumInterface
                 {
                     control.BackColor = Field;
                     control.ForeColor = Ink;
+                    control.Font = BaseFont;
                 }
                 else if (control is ComboBox)
                 {
@@ -461,6 +462,7 @@ public sealed class DbContext
 
     public DataTable Query(string sql, params OleDbParameter[] parameters)
     {
+        ValidateCommandText(sql);
         using (OleDbConnection connection = CreateOpenConnection())
         using (OleDbCommand command = new OleDbCommand(sql, connection))
         using (OleDbDataAdapter adapter = new OleDbDataAdapter(command))
@@ -479,6 +481,7 @@ public sealed class DbContext
 
     public int Execute(string sql, params OleDbParameter[] parameters)
     {
+        ValidateCommandText(sql);
         using (OleDbConnection connection = CreateOpenConnection())
         using (OleDbCommand command = new OleDbCommand(sql, connection))
         {
@@ -494,6 +497,7 @@ public sealed class DbContext
 
     public int ScalarInt(string sql)
     {
+        ValidateCommandText(sql);
         using (OleDbConnection connection = CreateOpenConnection())
         using (OleDbCommand command = new OleDbCommand(sql, connection))
         {
@@ -501,6 +505,30 @@ public sealed class DbContext
             object value = command.ExecuteScalar();
             if (value == null || value == DBNull.Value) return 0;
             return Convert.ToInt32(value);
+        }
+    }
+
+
+    private static void ValidateCommandText(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            throw new ArgumentException("SQL-запрос не может быть пустым.", "sql");
+        }
+
+        string normalized = sql.TrimStart();
+        if (normalized.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) &&
+            normalized.IndexOf(" FROM ", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            throw new ArgumentException("SELECT-запрос должен содержать источник данных FROM.", "sql");
+        }
+
+        if (!normalized.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("INSERT", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("DELETE", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("SQL-запрос должен начинаться с SELECT, INSERT, UPDATE или DELETE.", "sql");
         }
     }
 
@@ -708,6 +736,40 @@ public sealed class DbContext
 }
 
 
+    internal static class ReportSql
+    {
+        public static string VoucherIssuesDetailed(string topClause)
+        {
+            string top = string.IsNullOrWhiteSpace(topClause) ? string.Empty : topClause.Trim() + " ";
+            return "SELECT " + top +
+                   "vi.VoucherNo AS [Путевка], vi.IssueDate AS [Регистрация], " +
+                   "p.LastName & ' ' & p.FirstName & IIf(Nz(p.MiddleName,'')='', '', ' ' & p.MiddleName) AS [Пенсионер], " +
+                   "r.RegionName AS [Регион], s.SanatoriumName AS [Санаторий], " +
+                   "vi.StartDate AS [Заезд], vi.EndDate AS [Выезд], " +
+                   "DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1 AS [Дней], " +
+                   "(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay] AS [Стоимость], " +
+                   "vs.StatusName AS [Статус] " +
+                   "FROM (((tblVoucherIssues AS vi INNER JOIN tblPensioners AS p ON vi.PensionerID = p.PensionerID) " +
+                   "INNER JOIN tblRegions AS r ON p.RegionID = r.RegionID) " +
+                   "INNER JOIN tblSanatoriums AS s ON vi.SanatoriumID = s.SanatoriumID) " +
+                   "INNER JOIN tblVoucherStatuses AS vs ON vi.StatusID = vs.StatusID " +
+                   "ORDER BY vi.IssueDate, vi.VoucherNo";
+        }
+
+        public static string TotalsBySanatorium()
+        {
+            return "SELECT sr.RegionName AS [Регион санатория], s.SanatoriumName AS [Санаторий], " +
+                   "Count(vi.IssueID) AS [Путевок], " +
+                   "Sum(DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) AS [Дней], " +
+                   "Sum((DateDiff('d',[vi].[StartDate],[vi].[EndDate]) + 1) * [s].[PricePerDay]) AS [Плановая стоимость] " +
+                   "FROM (tblRegions AS sr INNER JOIN tblSanatoriums AS s ON sr.RegionID = s.RegionID) " +
+                   "INNER JOIN tblVoucherIssues AS vi ON s.SanatoriumID = vi.SanatoriumID " +
+                   "GROUP BY sr.RegionName, s.SanatoriumName " +
+                   "ORDER BY sr.RegionName, s.SanatoriumName";
+        }
+    }
+
+
     internal sealed class LookupItem
     {
         public LookupItem(int id, string text)
@@ -744,7 +806,7 @@ public class GlassForm : Form
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
         UpdateStyles();
         AutoScroll = true;
-        Padding = new Padding(24);
+        Padding = new Padding(12);
         MinimumSize = new Size(1024, 680);
         MaximizeBox = true;
         Shown += delegate { ApplyTheme(); };
@@ -1011,7 +1073,6 @@ public class GlassForm : Form
         protected override void OnMouseEnter(EventArgs e)
         {
             hot = true;
-            Invalidate();
             base.OnMouseEnter(e);
         }
 
@@ -1019,21 +1080,18 @@ public class GlassForm : Form
         {
             hot = false;
             pressed = false;
-            Invalidate();
             base.OnMouseLeave(e);
         }
 
         protected override void OnMouseDown(MouseEventArgs mevent)
         {
             pressed = true;
-            Invalidate();
             base.OnMouseDown(mevent);
         }
 
         protected override void OnMouseUp(MouseEventArgs mevent)
         {
             pressed = false;
-            Invalidate();
             base.OnMouseUp(mevent);
         }
 
@@ -1096,7 +1154,6 @@ public class GlassForm : Form
         }
     }
 
-    
 internal sealed class MainForm : GlassForm
 {
     private readonly Label stats;
@@ -3790,16 +3847,25 @@ internal sealed class PrintOptionsForm : Form
             {
                 this.message = message;
                 this.success = success;
-                FormBorderStyle = FormBorderStyle.None;
+                FormBorderStyle = FormBorderStyle.FixedSingle;
                 ShowInTaskbar = false;
                 int lineCount = message.Split(new[] { "\n" }, StringSplitOptions.None).Length;
                 Width = 420;
                 Height = 70 + (lineCount > 1 ? (lineCount - 1) * 18 : 0);
                 Height = Math.Min(Height, 150);
-                
-                BackColor = Color.FromArgb(250, 250, 252);
-                DoubleBuffered = true;
+
+                BackColor = SystemColors.Control;
                 AutoScaleMode = AutoScaleMode.Dpi;
+
+                Label label = new Label();
+                label.Dock = DockStyle.Fill;
+                label.Padding = new Padding(12);
+                label.TextAlign = ContentAlignment.MiddleLeft;
+                label.Font = Theme.BaseFont;
+                label.ForeColor = success ? SystemColors.ControlText : SystemColors.ControlText;
+                label.BackColor = SystemColors.Control;
+                label.Text = (success ? "Готово: " : "Внимание: ") + message;
+                Controls.Add(label);
 
                 timer = new Timer();
                 timer.Interval = 3500;
@@ -3816,7 +3882,7 @@ internal sealed class PrintOptionsForm : Form
                 timer.Start();
             }
 
-            protected override void OnPaint(PaintEventArgs e)
+            protected override void OnClosed(EventArgs e)
             {
                 Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
                 Color accent = success ? SystemColors.Highlight : SystemColors.ControlDarkDark;
@@ -3846,16 +3912,14 @@ internal sealed class PrintOptionsForm : Form
                 }
             }
 
-            private static GraphicsPath Rounded(Rectangle rectangle, int radius)
+            protected override void OnPaint(PaintEventArgs e)
             {
-                int diameter = radius * 2;
-                GraphicsPath path = new GraphicsPath();
-                path.AddArc(rectangle.X, rectangle.Y, diameter, diameter, 180, 90);
-                path.AddArc(rectangle.Right - diameter, rectangle.Y, diameter, diameter, 270, 90);
-                path.AddArc(rectangle.Right - diameter, rectangle.Bottom - diameter, diameter, diameter, 0, 90);
-                path.AddArc(rectangle.X, rectangle.Bottom - diameter, diameter, diameter, 90, 90);
-                path.CloseFigure();
-                return path;
+                bool stateTracked = success || !string.IsNullOrEmpty(message);
+                if (stateTracked)
+                {
+                    // Message is rendered by a standard Label; the form keeps standard WinForms painting.
+                }
+                base.OnPaint(e);
             }
         }
     }
