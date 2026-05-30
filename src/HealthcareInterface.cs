@@ -378,8 +378,21 @@ public static class UiPerformance
         }
     }
 }
+public sealed class DbCommandSpec
+{
+    public DbCommandSpec(string sql, params OleDbParameter[] parameters)
+    {
+        Sql = sql;
+        Parameters = parameters ?? new OleDbParameter[0];
+    }
+
+    public string Sql { get; private set; }
+    public OleDbParameter[] Parameters { get; private set; }
+}
+
 public sealed class DbContext
 {
+    private const int CommandTimeoutSeconds = 30;
     private static readonly string[] AccdbProviders = new[] { "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0", "Microsoft.Jet.OLEDB.4.0" };
     private static readonly string[] MdbProviders = new[] { "Microsoft.Jet.OLEDB.4.0", "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0" };
     private string resolvedProvider;
@@ -414,15 +427,9 @@ public sealed class DbContext
     public DataTable Query(string sql, params OleDbParameter[] parameters)
     {
         using (OleDbConnection connection = CreateOpenConnection())
-        using (OleDbCommand command = new OleDbCommand(sql, connection))
+        using (OleDbCommand command = CreateCommand(sql, connection, null, parameters))
         using (OleDbDataAdapter adapter = new OleDbDataAdapter(command))
         {
-            command.CommandTimeout = 30;
-            if (parameters != null && parameters.Length > 0)
-            {
-                command.Parameters.AddRange(parameters);
-            }
-
             DataTable table = new DataTable();
             adapter.Fill(table);
             return table;
@@ -432,32 +439,74 @@ public sealed class DbContext
     public int Execute(string sql, params OleDbParameter[] parameters)
     {
         using (OleDbConnection connection = CreateOpenConnection())
-        using (OleDbCommand command = new OleDbCommand(sql, connection))
+        using (OleDbCommand command = CreateCommand(sql, connection, null, parameters))
         {
-            command.CommandTimeout = 30;
-            if (parameters != null && parameters.Length > 0)
-            {
-                command.Parameters.AddRange(parameters);
-            }
-
-            return command.ExecuteNonQuery();
+            int affected = command.ExecuteNonQuery();
+            ClearLookupCache();
+            return affected;
         }
     }
 
-    public int ScalarInt(string sql)
+    public int ExecuteBatch(params DbCommandSpec[] statements)
+    {
+        if (statements == null || statements.Length == 0)
+        {
+            return 0;
+        }
+
+        using (OleDbConnection connection = CreateOpenConnection())
+        using (OleDbTransaction transaction = connection.BeginTransaction())
+        {
+            try
+            {
+                int affected = 0;
+                for (int i = 0; i < statements.Length; i++)
+                {
+                    DbCommandSpec statement = statements[i];
+                    if (statement == null || string.IsNullOrWhiteSpace(statement.Sql))
+                    {
+                        continue;
+                    }
+
+                    using (OleDbCommand command = CreateCommand(statement.Sql, connection, transaction, statement.Parameters))
+                    {
+                        affected += command.ExecuteNonQuery();
+                    }
+                }
+
+                transaction.Commit();
+                ClearLookupCache();
+                return affected;
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
+        }
+    }
+
+    public int ScalarInt(string sql, params OleDbParameter[] parameters)
+    {
+        object value = Scalar(sql, parameters);
+        if (value == null || value == DBNull.Value) return 0;
+        return Convert.ToInt32(value);
+    }
+
+    public object Scalar(string sql, params OleDbParameter[] parameters)
     {
         using (OleDbConnection connection = CreateOpenConnection())
-        using (OleDbCommand command = new OleDbCommand(sql, connection))
+        using (OleDbCommand command = CreateCommand(sql, connection, null, parameters))
         {
-            command.CommandTimeout = 30;
-            object value = command.ExecuteScalar();
-            if (value == null || value == DBNull.Value) return 0;
-            return Convert.ToInt32(value);
+            return command.ExecuteScalar();
         }
     }
 
     public DataTable Lookup(string table, string idField, string nameField)
     {
+        ValidateIdentifier(table, "table");
+        ValidateIdentifier(idField, "idField");
+        ValidateIdentifier(nameField, "nameField");
         return Query("SELECT " + idField + ", " + nameField + " FROM " + table + " ORDER BY " + nameField);
     }
 
@@ -469,14 +518,14 @@ public sealed class DbContext
             DataTable cached;
             if (lookupCache.TryGetValue(cacheKey, out cached))
             {
-                return cached;
+                return cached.Copy();
             }
         }
 
         DataTable result = Lookup(table, idField, nameField);
         lock (cacheLock)
         {
-            lookupCache[cacheKey] = result;
+            lookupCache[cacheKey] = result.Copy();
         }
         return result;
     }
@@ -486,6 +535,39 @@ public sealed class DbContext
         lock (cacheLock)
         {
             lookupCache.Clear();
+        }
+    }
+
+    private static OleDbCommand CreateCommand(string sql, OleDbConnection connection, OleDbTransaction transaction, OleDbParameter[] parameters)
+    {
+        OleDbCommand command = new OleDbCommand(sql, connection);
+        command.CommandTimeout = CommandTimeoutSeconds;
+        if (transaction != null)
+        {
+            command.Transaction = transaction;
+        }
+        if (parameters != null && parameters.Length > 0)
+        {
+            command.Parameters.AddRange(parameters);
+        }
+        return command;
+    }
+
+    private static void ValidateIdentifier(string value, string argumentName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Database identifier is empty.", argumentName);
+        }
+
+        for (int i = 0; i < value.Length; i++)
+        {
+            char c = value[i];
+            bool valid = char.IsLetterOrDigit(c) || c == '_';
+            if (!valid)
+            {
+                throw new ArgumentException("Database identifier contains unsupported characters: " + value, argumentName);
+            }
         }
     }
 
@@ -540,31 +622,31 @@ public sealed class DbContext
                 return resolvedProvider;
             }
 
-        if (!Exists())
-        {
+            if (!Exists())
+            {
+                return null;
+            }
+
+            List<string> failures = new List<string>();
+            foreach (string provider in GetProviderCandidates())
+            {
+                string failure;
+                if (CanOpenProvider(provider, out failure))
+                {
+                    resolvedProvider = provider;
+                    lastProviderError = null;
+                    return resolvedProvider;
+                }
+
+                if (!string.IsNullOrWhiteSpace(failure))
+                {
+                    failures.Add(failure);
+                }
+            }
+
+            resolvedProvider = null;
+            lastProviderError = failures.Count > 0 ? string.Join(" | ", failures.ToArray()) : "Ни один провайдер OLE DB не смог открыть базу.";
             return null;
-        }
-
-        List<string> failures = new List<string>();
-        foreach (string provider in GetProviderCandidates())
-        {
-            string failure;
-            if (CanOpenProvider(provider, out failure))
-            {
-                resolvedProvider = provider;
-                lastProviderError = null;
-                return resolvedProvider;
-            }
-
-            if (!string.IsNullOrWhiteSpace(failure))
-            {
-                failures.Add(failure);
-            }
-        }
-
-        resolvedProvider = null;
-        lastProviderError = failures.Count > 0 ? string.Join(" | ", failures.ToArray()) : "Ни один провайдер OLE DB не смог открыть базу.";
-        return null;
         }
     }
 
@@ -589,15 +671,16 @@ public sealed class DbContext
 
     private string BuildProviderError()
     {
+        string details = string.IsNullOrWhiteSpace(lastProviderError) ? string.Empty : "\nДетали OLE DB: " + lastProviderError;
         return "Ошибка подключения к базе данных. Проверьте:\n" +
                "1. Файл БД не поврежден\n" +
                "2. БД не открыта в другом приложении\n" +
-               "3. Права доступа к папке";
+               "3. Права доступа к папке" + details;
     }
 
     private string BuildConnectionError(string provider, Exception ex)
     {
-        return "Не удалось открыть БД: " + ex.Message;
+        return "Не удалось открыть БД через " + provider + ": " + ex.Message;
     }
 
     private string[] GetProviderCandidates()
@@ -1568,8 +1651,9 @@ internal sealed class MainForm : GlassForm
                 }
                 int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
                 if (MessageBox.Show("Удалить выбранного пенсионера и все его путевки?", "Удаление", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-                Db.Execute("DELETE FROM tblVoucherIssues WHERE PensionerID = ?", new OleDbParameter("pensioner", id));
-                Db.Execute("DELETE FROM tblPensioners WHERE PensionerID = ?", new OleDbParameter("pensioner", id));
+                Db.ExecuteBatch(
+                    new DbCommandSpec("DELETE FROM tblVoucherIssues WHERE PensionerID = ?", new OleDbParameter("pensioner", id)),
+                    new DbCommandSpec("DELETE FROM tblPensioners WHERE PensionerID = ?", new OleDbParameter("pensioner", id)));
                 LoadGrid();
                 ToastNotifier.Show(this, "Пенсионер удален. База обновлена", true);
             });
@@ -2033,8 +2117,9 @@ internal sealed class MainForm : GlassForm
                 }
                 int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
                 if (MessageBox.Show("Удалить санаторий и связанные путевки?", "Удаление", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-                Db.Execute("DELETE FROM tblVoucherIssues WHERE SanatoriumID = ?", new OleDbParameter("sanatorium", id));
-                Db.Execute("DELETE FROM tblSanatoriums WHERE SanatoriumID = ?", new OleDbParameter("sanatorium", id));
+                Db.ExecuteBatch(
+                    new DbCommandSpec("DELETE FROM tblVoucherIssues WHERE SanatoriumID = ?", new OleDbParameter("sanatorium", id)),
+                    new DbCommandSpec("DELETE FROM tblSanatoriums WHERE SanatoriumID = ?", new OleDbParameter("sanatorium", id)));
                 LoadGrid();
                 ToastNotifier.Show(this, "Санаторий удален. База обновлена", true);
             });
@@ -3011,8 +3096,9 @@ internal sealed class DataToolsForm : GlassForm
         Guard(delegate
         {
             if (MessageBox.Show("Удалить пенсионеров и все связанные путевки?", "Очистка", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-            Db.Execute("DELETE FROM tblVoucherIssues");
-            Db.Execute("DELETE FROM tblPensioners");
+            Db.ExecuteBatch(
+                new DbCommandSpec("DELETE FROM tblVoucherIssues"),
+                new DbCommandSpec("DELETE FROM tblPensioners"));
             RefreshStats();
             ToastNotifier.Show(this, "Пенсионеры и журнал очищены. База обновлена", true);
         });
@@ -3023,9 +3109,10 @@ internal sealed class DataToolsForm : GlassForm
         Guard(delegate
         {
             if (MessageBox.Show("Будут удалены ВСЕ записи кроме справочников. Продолжить?", "Полная очистка", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-            Db.Execute("DELETE FROM tblVoucherIssues");
-            Db.Execute("DELETE FROM tblPensioners");
-            Db.Execute("DELETE FROM tblSanatoriums");
+            Db.ExecuteBatch(
+                new DbCommandSpec("DELETE FROM tblVoucherIssues"),
+                new DbCommandSpec("DELETE FROM tblPensioners"),
+                new DbCommandSpec("DELETE FROM tblSanatoriums"));
             RefreshStats();
             ToastNotifier.Show(this, "Все демонстрационные данные очищены", true);
         });
