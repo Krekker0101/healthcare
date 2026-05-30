@@ -68,11 +68,13 @@ namespace HealthcareSanatoriumInterface
 
     internal static class Theme
     {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
+
         public static bool Dark = false;
         public static Color Ink { get { return Dark ? Color.FromArgb(232, 238, 248) : Color.FromArgb(24, 31, 44); } }
         public static Color Muted { get { return Dark ? Color.FromArgb(164, 176, 196) : Color.FromArgb(91, 107, 129); } }
         public static Color Line { get { return Dark ? Color.FromArgb(64, 78, 105) : Color.FromArgb(207, 216, 230); } }
-        public static Color Panel { get { return Dark ? Color.FromArgb(218, 24, 32, 48) : Color.FromArgb(238, 248, 255, 255); } }
         public static Color Surface { get { return Dark ? Color.FromArgb(20, 27, 42) : Color.White; } }
         public static Color Field { get { return Dark ? Color.FromArgb(28, 37, 56) : Color.White; } }
         public static Color Blue { get { return Dark ? Color.FromArgb(74, 144, 255) : Color.FromArgb(0, 122, 255); } }
@@ -107,9 +109,7 @@ namespace HealthcareSanatoriumInterface
             button.Font = ButtonFont;
             button.Margin = Padding.Empty;
             button.AutoEllipsis = true;
-            button.MinimumSize = new Size(Math.Max(button.MinimumSize.Width, 150), Math.Max(button.MinimumSize.Height, 40));
-            if (button.Width < 150) button.Width = 150;
-            if (button.Height < 40) button.Height = 40;
+            if (button.Height < 36) button.Height = 36;
             button.Cursor = Cursors.Hand;
             button.TabStop = true;
             button.Invalidate();
@@ -146,7 +146,9 @@ namespace HealthcareSanatoriumInterface
             grid.MultiSelect = false;
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-            grid.RowTemplate.Height = 28;
+            grid.RowTemplate.Height = 30;
+            grid.ColumnHeadersHeight = 34;
+            grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
             grid.ShowCellToolTips = false;
             grid.BackgroundColor = Surface;
             grid.BorderStyle = BorderStyle.None;
@@ -162,7 +164,7 @@ namespace HealthcareSanatoriumInterface
             grid.AlternatingRowsDefaultCellStyle.BackColor = Dark ? Color.FromArgb(24, 33, 50) : Color.FromArgb(250, 252, 255);
             grid.RowHeadersVisible = false;
             grid.GridColor = Dark ? Color.FromArgb(54, 66, 88) : Color.FromArgb(230, 235, 244);
-            grid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            grid.Dock = DockStyle.Fill;
             try
             {
                 typeof(DataGridView).InvokeMember("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty, null, grid, new object[] { true });
@@ -191,6 +193,11 @@ namespace HealthcareSanatoriumInterface
                 {
                     control.BackColor = Field;
                     control.ForeColor = Ink;
+                    string ph = control.Tag as string;
+                    if (!string.IsNullOrEmpty(ph))
+                    {
+                        try { SendMessage(control.Handle, 0x1501u, IntPtr.Zero, ph); } catch { }
+                    }
                 }
                 else if (control is ComboBox)
                 {
@@ -253,23 +260,28 @@ internal static class ErrorLogger
 
 internal static class Debouncer
 {
+    private static readonly Dictionary<string, System.Windows.Forms.Timer> Timers = new Dictionary<string, System.Windows.Forms.Timer>();
+
     public static void Debounce(string key, System.Action action, int delayMs = 300)
     {
-        var timer = new System.Windows.Forms.Timer();
+        System.Windows.Forms.Timer existing;
+        if (Timers.TryGetValue(key, out existing))
+        {
+            existing.Stop();
+            existing.Dispose();
+            Timers.Remove(key);
+        }
+        System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         timer.Interval = delayMs;
         timer.Tick += delegate
         {
             timer.Stop();
             timer.Dispose();
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                ErrorLogger.LogException(ex);
-            }
+            Timers.Remove(key);
+            try { action(); }
+            catch (Exception ex) { ErrorLogger.LogException(ex); }
         };
+        Timers[key] = timer;
         timer.Start();
     }
 }
@@ -375,28 +387,6 @@ public sealed class DbContext
         }
     }
 
-    public string GetStatusMessage()
-    {
-        if (!Exists())
-        {
-            return "Файл базы данных не найден:\n" + DatabasePath;
-        }
-
-        try
-        {
-            string provider = ResolveProvider();
-            if (!string.IsNullOrWhiteSpace(provider))
-            {
-                return "База данных подключена и готова к работе";
-            }
-        }
-        catch
-        {
-        }
-
-        return "База данных временно недоступна";
-    }
-
     public DataTable Query(string sql, params OleDbParameter[] parameters)
     {
         using (OleDbConnection connection = CreateOpenConnection())
@@ -473,72 +463,6 @@ public sealed class DbContext
         {
             lookupCache.Clear();
         }
-    }
-
-    public System.Threading.Tasks.Task<DataTable> QueryAsync(string sql, params OleDbParameter[] parameters)
-    {
-        return System.Threading.Tasks.Task.Run(() => Query(sql, parameters));
-    }
-
-    public System.Threading.Tasks.Task<int> ExecuteAsync(string sql, params OleDbParameter[] parameters)
-    {
-        return System.Threading.Tasks.Task.Run(() => Execute(sql, parameters));
-    }
-
-    public System.Threading.Tasks.Task<int> ScalarIntAsync(string sql)
-    {
-        return System.Threading.Tasks.Task.Run(() => ScalarInt(sql));
-    }
-
-    public DataTable QueryWithRetry(string sql, int retryCount = 3, params OleDbParameter[] parameters)
-    {
-        for (int attempt = 0; attempt < retryCount; attempt++)
-        {
-            try
-            {
-                return Query(sql, parameters);
-            }
-            catch (Exception ex)
-            {
-                if (attempt < retryCount - 1 && IsRetryableError(ex))
-                {
-                    System.Threading.Thread.Sleep((int)Math.Pow(2, attempt) * 100);
-                }
-                else
-                {
-                    throw;
-                }
-            }
-        }
-        throw new InvalidOperationException("Не удалось выполнить запрос после " + retryCount + " попыток");
-    }
-
-    public int ExecuteWithRetry(string sql, int retryCount = 3, params OleDbParameter[] parameters)
-    {
-        for (int attempt = 0; attempt < retryCount; attempt++)
-        {
-            try
-            {
-                return Execute(sql, parameters);
-            }
-            catch (Exception ex)
-            {
-                if (attempt < retryCount - 1 && IsRetryableError(ex))
-                {
-                    System.Threading.Thread.Sleep((int)Math.Pow(2, attempt) * 100);
-                }
-                else
-                {
-                    throw;
-                }
-            }
-        }
-        throw new InvalidOperationException("Не удалось выполнить операцию после " + retryCount + " попыток");
-    }
-
-    private static bool IsRetryableError(Exception ex)
-    {
-        return ex is OleDbException || ex.InnerException is System.IO.IOException;
     }
 
     private OleDbConnection CreateOpenConnection()
@@ -699,14 +623,12 @@ public class GlassForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
         DoubleBuffered = true;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        ResizeRedraw = true;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
         UpdateStyles();
         AutoScroll = true;
         Padding = new Padding(24);
         MinimumSize = new Size(1024, 680);
-        DoubleBuffered = true;
-        ResizeRedraw = true;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         MaximizeBox = true;
         Shown += delegate { ApplyTheme(); };
     }
@@ -802,49 +724,38 @@ public class GlassForm : Form
         }
     }
 
-    protected async System.Threading.Tasks.Task GuardAsync(System.Func<System.Threading.Tasks.Task> action)
+    protected static TableLayoutPanel MakeRootLayout()
     {
-        try
-        {
-            if (!Db.Exists())
-            {
-                ErrorLogger.Log("Database not found (async): " + Db.DatabasePath);
-                ToastNotifier.Show(this, "Файл базы данных не найден:\n" + Db.DatabasePath, false);
-                return;
-            }
-
-            await action();
-        }
-        catch (Exception ex)
-        {
-            ErrorLogger.LogException(ex);
-            ToastNotifier.Show(this, "Операция не выполнена: " + ex.Message, false);
-        }
+        TableLayoutPanel t = new TableLayoutPanel();
+        t.Dock = DockStyle.Fill;
+        t.BackColor = Color.Transparent;
+        t.ColumnCount = 1;
+        t.RowCount = 4;
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        t.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 0: header
+        t.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 1: filters
+        t.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // 2: grid
+        t.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 3: actions
+        return t;
     }
 
-    protected async System.Threading.Tasks.Task<T> GuardAsync<T>(System.Func<System.Threading.Tasks.Task<T>> action)
+    protected static TableLayoutPanel MakeHeaderRow()
     {
-        try
-        {
-            if (!Db.Exists())
-            {
-                ErrorLogger.Log("Database not found (async generic): " + Db.DatabasePath);
-                ToastNotifier.Show(this, "Файл базы данных не найден:\n" + Db.DatabasePath, false);
-                return default(T);
-            }
-
-            return await action();
-        }
-        catch (Exception ex)
-        {
-            ErrorLogger.LogException(ex);
-            ToastNotifier.Show(this, "Операция не выполнена: " + ex.Message, false);
-            return default(T);
-        }
+        TableLayoutPanel h = new TableLayoutPanel();
+        h.Dock = DockStyle.Fill;
+        h.BackColor = Color.Transparent;
+        h.ColumnCount = 2;
+        h.RowCount = 1;
+        h.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        h.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        h.Margin = new Padding(0, 2, 0, 12);
+        h.Padding = new Padding(0, 0, 0, 10);
+        return h;
     }
 
-    protected void FillLookup(ComboBox combo, DataTable table, string idField, string nameField, bool addAll)
+    protected static FlowLayoutPanel MakeHeaderButtons()
     {
+<<<<<<< HEAD
         combo.BeginUpdate();
         try
         {
@@ -854,6 +765,87 @@ public class GlassForm : Form
                 combo.Items.Add(new LookupItem(0, "Все"));
             }
 
+=======
+        FlowLayoutPanel f = new FlowLayoutPanel();
+        f.AutoSize = true;
+        f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        f.FlowDirection = FlowDirection.LeftToRight;
+        f.WrapContents = false;
+        f.BackColor = Color.Transparent;
+        f.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+        return f;
+    }
+
+    protected static FlowLayoutPanel MakeFilterRow()
+    {
+        FlowLayoutPanel f = new FlowLayoutPanel();
+        f.Dock = DockStyle.Fill;
+        f.AutoSize = true;
+        f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        f.FlowDirection = FlowDirection.LeftToRight;
+        f.WrapContents = true;
+        f.BackColor = Color.Transparent;
+        f.Margin = new Padding(0, 0, 0, 8);
+        return f;
+    }
+
+    protected static TableLayoutPanel MakeActionBar()
+    {
+        TableLayoutPanel t = new TableLayoutPanel();
+        t.Dock = DockStyle.Fill;
+        t.BackColor = Color.Transparent;
+        t.ColumnCount = 2;
+        t.RowCount = 1;
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        t.Margin = new Padding(0, 4, 0, 0);
+        return t;
+    }
+
+    protected static FlowLayoutPanel MakeLeftActions()
+    {
+        FlowLayoutPanel f = new FlowLayoutPanel();
+        f.AutoSize = true;
+        f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        f.FlowDirection = FlowDirection.LeftToRight;
+        f.WrapContents = false;
+        f.BackColor = Color.Transparent;
+        return f;
+    }
+
+    protected static FlowLayoutPanel MakeRightActions()
+    {
+        FlowLayoutPanel f = new FlowLayoutPanel();
+        f.AutoSize = true;
+        f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        f.FlowDirection = FlowDirection.RightToLeft;
+        f.WrapContents = false;
+        f.BackColor = Color.Transparent;
+        f.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+        return f;
+    }
+
+    protected static Button MakeButton(string text, bool primary)
+    {
+        GlassButton b = new GlassButton();
+        b.Text = text;
+        b.Size = new Size(116, 38);
+        Theme.StyleButton(b, primary);
+        return b;
+    }
+
+    protected void FillLookup(ComboBox combo, DataTable table, string idField, string nameField, bool addAll, string allLabel = "— Все —")
+    {
+        combo.BeginUpdate();
+        try
+        {
+            combo.Items.Clear();
+            if (addAll)
+            {
+                combo.Items.Add(new LookupItem(0, allLabel));
+            }
+
+>>>>>>> c092d92 (Update repository with latest local changes)
             foreach (DataRow row in table.Rows)
             {
                 combo.Items.Add(new LookupItem(Convert.ToInt32(row[idField]), Convert.ToString(row[nameField])));
@@ -896,9 +888,8 @@ public class GlassForm : Form
         public GlassPanel()
         {
             DoubleBuffered = true;
-            Padding = new Padding(18);
+            Padding = new Padding(22);
             BackColor = Color.Transparent;
-            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1233,7 +1224,7 @@ internal sealed class MainForm : GlassForm
         sectionTitle.Margin = new Padding(0, 0, 0, 6);
         homeLayout.Controls.Add(sectionTitle, 0, 0);
 
-        sectionHint = Theme.Label("Современное левое меню, быстрые действия и аккуратные уведомления для всех важных событий.", Theme.BaseFont, Theme.Muted);
+        sectionHint = Theme.Label("Выберите раздел из левого меню для работы с пенсионерами, путевками и санаториями.", Theme.BaseFont, Theme.Muted);
         sectionHint.Margin = new Padding(0, 0, 0, 10);
         sectionHint.MaximumSize = new Size(760, 0);
         homeLayout.Controls.Add(sectionHint, 0, 1);
@@ -1258,28 +1249,35 @@ internal sealed class MainForm : GlassForm
 
         Button manualPdf = new GlassButton();
         manualPdf.Text = "Открыть PDF";
-        manualPdf.SetBounds(0, 0, 148, 42);
+        manualPdf.Size = new Size(140, 40);
+        manualPdf.Margin = new Padding(0, 0, 8, 0);
         Theme.StyleButton(manualPdf, false);
         manualPdf.Click += delegate { OpenManual("pdf"); };
         manualBar.Controls.Add(manualPdf);
 
         Button manualRtf = new GlassButton();
         manualRtf.Text = "Открыть RTF";
-        manualRtf.SetBounds(0, 0, 148, 42);
+        manualRtf.Size = new Size(140, 40);
+        manualRtf.Margin = new Padding(0, 0, 8, 0);
         Theme.StyleButton(manualRtf, false);
         manualRtf.Click += delegate { OpenManual("rtf"); };
         manualBar.Controls.Add(manualRtf);
 
         Button manualTxt = new GlassButton();
         manualTxt.Text = "Открыть TXT";
-        manualTxt.SetBounds(0, 0, 148, 42);
+        manualTxt.Size = new Size(140, 40);
+        manualTxt.Margin = new Padding(0, 0, 16, 0);
         Theme.StyleButton(manualTxt, false);
         manualTxt.Click += delegate { OpenManual("txt"); };
         manualBar.Controls.Add(manualTxt);
 
         Button allPdf = new GlassButton();
         allPdf.Text = "PDF: все таблицы";
+<<<<<<< HEAD
         allPdf.SetBounds(0, 0, 170, 42);
+=======
+        allPdf.Size = new Size(162, 40);
+>>>>>>> c092d92 (Update repository with latest local changes)
         Theme.StyleButton(allPdf, true);
         allPdf.Click += delegate { ExportAllTablesPdf(); };
         manualBar.Controls.Add(allPdf);
@@ -1372,7 +1370,7 @@ internal sealed class MainForm : GlassForm
             int pensioners = Db.ScalarInt("SELECT Count(*) FROM tblPensioners");
             int vouchers = Db.ScalarInt("SELECT Count(*) FROM tblVoucherIssues");
             int sanatoriums = Db.ScalarInt("SELECT Count(*) FROM tblSanatoriums");
-            stats.Text = "Пенсионеры: " + pensioners + "   Путевки: " + vouchers + "   Санатории: " + sanatoriums;
+            stats.Text = pensioners + " пенсионеров  ·  " + vouchers + " путевок  ·  " + sanatoriums + " санаториев";
         });
     }
 
@@ -1487,32 +1485,38 @@ internal sealed class MainForm : GlassForm
         public PensionersForm(DbContext db) : base(db)
         {
             Text = "Пенсионеры";
-            Size = new Size(1120, 720);
+            Size = new Size(1100, 700);
+            MinimumSize = new Size(820, 520);
 
             GlassPanel panel = new GlassPanel();
             panel.Dock = DockStyle.Fill;
-            panel.SetBounds(28, 24, 1048, 610);
             Controls.Add(panel);
 
-            Label title = Theme.Label("Пенсионеры", Theme.TitleFont, Theme.Ink);
-            title.Location = new Point(24, 20);
-            panel.Controls.Add(title);
+            TableLayoutPanel root = MakeRootLayout();
+            panel.Controls.Add(root);
 
-            search = Theme.TextBox("Поиск");
-            search.SetBounds(28, 88, 240, 30);
-            search.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            panel.Controls.Add(search);
+            // Header
+            TableLayoutPanel header = MakeHeaderRow();
+            root.Controls.Add(header, 0, 0);
+            header.Controls.Add(Theme.Label("Пенсионеры", Theme.TitleFont, Theme.Ink), 0, 0);
+            FlowLayoutPanel hBtns = MakeHeaderButtons();
+            header.Controls.Add(hBtns, 1, 0);
+            Button exportPdf = MakeButton("Экспорт PDF", false); exportPdf.Click += delegate { ExportPdf(); };
+            Button load = MakeButton("Обновить", true); load.Click += delegate { LoadGrid(); };
+            hBtns.Controls.Add(exportPdf);
+            hBtns.Controls.Add(load);
 
-            region = new ComboBox();
-            region.SetBounds(286, 88, 250, 30);
-            region.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            panel.Controls.Add(region);
-
+            // Filters
+            FlowLayoutPanel filters = MakeFilterRow();
+            root.Controls.Add(filters, 0, 1);
+            search = Theme.TextBox("Поиск по ФИО и удостоверению");
+            search.Width = 256; search.Height = 32; search.Margin = new Padding(0, 0, 10, 4);
+            region = new ComboBox(); region.Width = 210; region.Margin = new Padding(0, 0, 10, 4);
             onlyWithVouchers = new CheckBox();
             onlyWithVouchers.Text = "Только с путевками";
-            onlyWithVouchers.SetBounds(554, 88, 190, 30);
-            onlyWithVouchers.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            onlyWithVouchers.AutoSize = true;
             onlyWithVouchers.BackColor = Color.Transparent;
+<<<<<<< HEAD
             panel.Controls.Add(onlyWithVouchers);
 
             Button load = new GlassButton();
@@ -1546,29 +1550,53 @@ internal sealed class MainForm : GlassForm
             Theme.StyleButton(delete, false);
             delete.Click += DeletePensioner;
             panel.Controls.Add(delete);
+=======
+            onlyWithVouchers.Margin = new Padding(4, 6, 0, 4);
+            filters.Controls.Add(search);
+            filters.Controls.Add(region);
+            filters.Controls.Add(onlyWithVouchers);
+>>>>>>> c092d92 (Update repository with latest local changes)
 
+            // Grid
             grid = new DataGridView();
-            grid.SetBounds(28, 142, 990, 398);
+            grid.Margin = new Padding(0, 0, 0, 10);
             Theme.StyleGrid(grid);
-            panel.Controls.Add(grid);
+            grid.CellDoubleClick += delegate(object s, DataGridViewCellEventArgs ev)
+            {
+                if (ev.RowIndex >= 0) EditPensioner(s, EventArgs.Empty);
+            };
+            new ToolTip().SetToolTip(grid, "Двойной клик — редактировать запись");
+            root.Controls.Add(grid, 0, 2);
 
-            Button close = new GlassButton();
-            close.Text = "Назад";
-            close.SetBounds(884, 552, 134, 40);
-            close.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            close.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            Theme.StyleButton(close, false);
-            close.Click += delegate { Close(); };
-            panel.Controls.Add(close);
+            // Actions
+            TableLayoutPanel actions = MakeActionBar();
+            root.Controls.Add(actions, 0, 3);
+            FlowLayoutPanel left = MakeLeftActions();
+            actions.Controls.Add(left, 0, 0);
+            Button add = MakeButton("Добавить", true); add.Margin = new Padding(0, 0, 8, 0); add.Click += AddPensioner;
+            Button editBtn = MakeButton("Изменить", false); editBtn.Margin = new Padding(0, 0, 8, 0); editBtn.Click += EditPensioner;
+            Button del = MakeButton("Удалить", false); del.Click += DeletePensioner;
+            left.Controls.Add(add); left.Controls.Add(editBtn); left.Controls.Add(del);
+            Button close = MakeButton("Назад", false); close.Click += delegate { Close(); };
+            FlowLayoutPanel right = MakeRightActions();
+            right.Controls.Add(close);
+            actions.Controls.Add(right, 1, 0);
 
             Load += delegate
             {
                 Guard(delegate
                 {
+<<<<<<< HEAD
                     FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
+=======
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
+>>>>>>> c092d92 (Update repository with latest local changes)
                     LoadGrid();
                 });
             };
+            search.TextChanged += delegate { Debouncer.Debounce("pensioners_search", LoadGrid, 350); };
+            region.SelectedIndexChanged += delegate { Debouncer.Debounce("pensioners_region", LoadGrid, 200); };
+            onlyWithVouchers.CheckedChanged += delegate { LoadGrid(); };
         }
 
         private void LoadGrid()
@@ -1634,6 +1662,27 @@ internal sealed class MainForm : GlassForm
             });
         }
 
+        private void EditPensioner(object sender, EventArgs e)
+        {
+            Guard(delegate
+            {
+                if (grid.SelectedRows.Count == 0)
+                {
+                    MessageBox.Show("Выберите пенсионера для редактирования.", "Редактирование", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
+                using (PensionerEditForm form = new PensionerEditForm(Db, id))
+                {
+                    if (form.ShowDialog(this) == DialogResult.OK)
+                    {
+                        LoadGrid();
+                        ToastNotifier.Show(this, "Данные пенсионера обновлены", true);
+                    }
+                }
+            });
+        }
+
         private void DeletePensioner(object sender, EventArgs e)
         {
             Guard(delegate
@@ -1663,97 +1712,82 @@ internal sealed class MainForm : GlassForm
         public VouchersForm(DbContext db) : base(db)
         {
             Text = "Журнал путевок";
-            Size = new Size(1160, 740);
+            Size = new Size(1140, 700);
+            MinimumSize = new Size(860, 520);
 
             GlassPanel panel = new GlassPanel();
             panel.Dock = DockStyle.Fill;
-            panel.SetBounds(28, 24, 1088, 632);
             Controls.Add(panel);
 
-            Label title = Theme.Label("Журнал регистрации выдачи путевок", Theme.TitleFont, Theme.Ink);
-            title.Location = new Point(24, 20);
-            panel.Controls.Add(title);
+            TableLayoutPanel root = MakeRootLayout();
+            panel.Controls.Add(root);
 
-            region = new ComboBox();
-            region.SetBounds(28, 88, 230, 30);
-            region.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            panel.Controls.Add(region);
+            // Header
+            TableLayoutPanel header = MakeHeaderRow();
+            root.Controls.Add(header, 0, 0);
+            header.Controls.Add(Theme.Label("Журнал путевок", Theme.TitleFont, Theme.Ink), 0, 0);
+            FlowLayoutPanel hBtns = MakeHeaderButtons();
+            header.Controls.Add(hBtns, 1, 0);
+            Button preview = MakeButton("Предпросмотр", false); preview.Width = 140; preview.Click += delegate { ShowPrintOptions(false); };
+            Button print = MakeButton("Печать", false); print.Width = 90; print.Margin = new Padding(8, 0, 8, 0); print.Click += delegate { ShowPrintOptions(true); };
+            Button load = MakeButton("Обновить", true); load.Click += delegate { LoadGrid(); };
+            hBtns.Controls.Add(preview); hBtns.Controls.Add(print); hBtns.Controls.Add(load);
 
-            status = new ComboBox();
-            status.SetBounds(276, 88, 220, 30);
-            status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            panel.Controls.Add(status);
-
+            // Filters
+            FlowLayoutPanel filters = MakeFilterRow();
+            root.Controls.Add(filters, 0, 1);
+            region = new ComboBox(); region.Width = 210; region.Margin = new Padding(0, 0, 10, 4);
+            status = new ComboBox(); status.Width = 190; status.Margin = new Padding(0, 0, 10, 4);
             hideCanceled = new CheckBox();
             hideCanceled.Text = "Скрыть отмененные";
             hideCanceled.Checked = true;
-            hideCanceled.SetBounds(514, 88, 190, 30);
-            hideCanceled.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            hideCanceled.AutoSize = true;
             hideCanceled.BackColor = Color.Transparent;
-            panel.Controls.Add(hideCanceled);
+            hideCanceled.Margin = new Padding(4, 6, 0, 4);
+            filters.Controls.Add(region); filters.Controls.Add(status); filters.Controls.Add(hideCanceled);
 
-            Button load = new GlassButton();
-            load.Text = "Обновить";
-            load.SetBounds(722, 84, 124, 38);
-            load.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(load, true);
-            load.Click += delegate { LoadGrid(); };
-            panel.Controls.Add(load);
-
-            Button preview = new GlassButton();
-            preview.Text = "Предпросмотр";
-            preview.SetBounds(860, 84, 144, 38);
-            preview.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(preview, false);
-            preview.Click += delegate { ShowPrintOptions(false); };
-            panel.Controls.Add(preview);
-
-            Button print = new GlassButton();
-            print.Text = "Печать";
-            print.SetBounds(1012, 84, 70, 38);
-            print.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Theme.StyleButton(print, false);
-            print.Click += delegate { ShowPrintOptions(true); };
-            panel.Controls.Add(print);
-
-            Button add = new GlassButton();
-            add.Text = "Добавить";
-            add.SetBounds(28, 574, 132, 40);
-            add.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(add, true);
-            add.Click += AddVoucher;
-            panel.Controls.Add(add);
-
-            Button delete = new GlassButton();
-            delete.Text = "Удалить";
-            delete.SetBounds(174, 574, 132, 40);
-            delete.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Theme.StyleButton(delete, false);
-            delete.Click += DeleteVoucher;
-            panel.Controls.Add(delete);
-
+            // Grid
             grid = new DataGridView();
-            grid.SetBounds(28, 142, 1030, 420);
+            grid.Margin = new Padding(0, 0, 0, 10);
             Theme.StyleGrid(grid);
-            panel.Controls.Add(grid);
+            grid.CellDoubleClick += delegate(object s, DataGridViewCellEventArgs ev)
+            {
+                if (ev.RowIndex >= 0) EditVoucher(s, EventArgs.Empty);
+            };
+            new ToolTip().SetToolTip(grid, "Двойной клик — редактировать запись");
+            root.Controls.Add(grid, 0, 2);
 
-            Button close = new GlassButton();
-            close.Text = "Назад";
-            close.SetBounds(924, 574, 134, 40);
-            close.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            Theme.StyleButton(close, false);
-            close.Click += delegate { Close(); };
-            panel.Controls.Add(close);
+            // Actions
+            TableLayoutPanel actions = MakeActionBar();
+            root.Controls.Add(actions, 0, 3);
+            FlowLayoutPanel left = MakeLeftActions();
+            actions.Controls.Add(left, 0, 0);
+            Button add = MakeButton("Добавить", true); add.Margin = new Padding(0, 0, 8, 0); add.Click += AddVoucher;
+            Button editBtn = MakeButton("Изменить", false); editBtn.Margin = new Padding(0, 0, 8, 0); editBtn.Click += EditVoucher;
+            Button del = MakeButton("Удалить", false); del.Click += DeleteVoucher;
+            left.Controls.Add(add); left.Controls.Add(editBtn); left.Controls.Add(del);
+            Button close = MakeButton("Назад", false); close.Click += delegate { Close(); };
+            FlowLayoutPanel right = MakeRightActions();
+            right.Controls.Add(close);
+            actions.Controls.Add(right, 1, 0);
 
             Load += delegate
             {
                 Guard(delegate
                 {
+<<<<<<< HEAD
                     FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true);
                     FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true);
+=======
+                    FillLookup(region, Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName", true, "Регион: все");
+                    FillLookup(status, Db.LookupCached("tblVoucherStatuses", "StatusID", "StatusName"), "StatusID", "StatusName", true, "Статус: все");
+>>>>>>> c092d92 (Update repository with latest local changes)
                     LoadGrid();
                 });
             };
+            region.SelectedIndexChanged += delegate { Debouncer.Debounce("vouchers_region", LoadGrid, 200); };
+            status.SelectedIndexChanged += delegate { Debouncer.Debounce("vouchers_status", LoadGrid, 200); };
+            hideCanceled.CheckedChanged += delegate { LoadGrid(); };
         }
 
         private void LoadGrid()
@@ -1805,6 +1839,27 @@ internal sealed class MainForm : GlassForm
                     {
                         LoadGrid();
                         ToastNotifier.Show(this, "Путевка добавлена. База обновлена", true);
+                    }
+                }
+            });
+        }
+
+        private void EditVoucher(object sender, EventArgs e)
+        {
+            Guard(delegate
+            {
+                if (grid.SelectedRows.Count == 0)
+                {
+                    MessageBox.Show("Выберите путевку для редактирования.", "Редактирование", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
+                using (VoucherEditForm form = new VoucherEditForm(Db, id))
+                {
+                    if (form.ShowDialog(this) == DialogResult.OK)
+                    {
+                        LoadGrid();
+                        ToastNotifier.Show(this, "Данные путевки обновлены", true);
                     }
                 }
             });
@@ -1912,26 +1967,36 @@ internal sealed class MainForm : GlassForm
         public SanatoriumsForm(DbContext db) : base(db)
         {
             Text = "Санатории";
-            Size = new Size(1080, 700);
+            Size = new Size(1060, 680);
+            MinimumSize = new Size(780, 500);
 
             GlassPanel panel = new GlassPanel();
             panel.Dock = DockStyle.Fill;
-            panel.SetBounds(28, 24, 1008, 590);
             Controls.Add(panel);
 
-            Label title = Theme.Label("Санатории", Theme.TitleFont, Theme.Ink);
-            title.Location = new Point(24, 20);
-            panel.Controls.Add(title);
+            TableLayoutPanel root = MakeRootLayout();
+            panel.Controls.Add(root);
 
-            profile = new ComboBox();
-            profile.SetBounds(28, 88, 280, 30);
-            profile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            panel.Controls.Add(profile);
+            // Header
+            TableLayoutPanel header = MakeHeaderRow();
+            root.Controls.Add(header, 0, 0);
+            header.Controls.Add(Theme.Label("Санатории", Theme.TitleFont, Theme.Ink), 0, 0);
+            FlowLayoutPanel hBtns = MakeHeaderButtons();
+            header.Controls.Add(hBtns, 1, 0);
+            Button exportPdf = MakeButton("Экспорт PDF", false); exportPdf.Click += delegate { ExportPdf(); };
+            Button load = MakeButton("Обновить", true); load.Margin = new Padding(8, 0, 0, 0); load.Click += delegate { LoadGrid(); };
+            hBtns.Controls.Add(exportPdf); hBtns.Controls.Add(load);
 
+            // Filters
+            FlowLayoutPanel filters = MakeFilterRow();
+            root.Controls.Add(filters, 0, 1);
+            profile = new ComboBox(); profile.Width = 240; profile.Margin = new Padding(0, 0, 10, 4);
             onlyActive = new CheckBox();
             onlyActive.Text = "Только работающие";
             onlyActive.Checked = true;
+            onlyActive.AutoSize = true;
             onlyActive.BackColor = Color.Transparent;
+<<<<<<< HEAD
             onlyActive.SetBounds(326, 88, 190, 30);
             onlyActive.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             panel.Controls.Add(onlyActive);
@@ -1967,28 +2032,50 @@ internal sealed class MainForm : GlassForm
             Theme.StyleButton(delete, false);
             delete.Click += DeleteSanatorium;
             panel.Controls.Add(delete);
+=======
+            onlyActive.Margin = new Padding(4, 6, 0, 4);
+            filters.Controls.Add(profile); filters.Controls.Add(onlyActive);
+>>>>>>> c092d92 (Update repository with latest local changes)
 
+            // Grid
             grid = new DataGridView();
-            grid.SetBounds(28, 142, 952, 365);
+            grid.Margin = new Padding(0, 0, 0, 10);
             Theme.StyleGrid(grid);
-            panel.Controls.Add(grid);
+            grid.CellDoubleClick += delegate(object s, DataGridViewCellEventArgs ev)
+            {
+                if (ev.RowIndex >= 0) EditSanatorium(s, EventArgs.Empty);
+            };
+            new ToolTip().SetToolTip(grid, "Двойной клик — редактировать запись");
+            root.Controls.Add(grid, 0, 2);
 
-            Button close = new GlassButton();
-            close.Text = "Назад";
-            close.SetBounds(846, 520, 134, 40);
-            close.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            Theme.StyleButton(close, false);
-            close.Click += delegate { Close(); };
-            panel.Controls.Add(close);
+            // Actions
+            TableLayoutPanel actions = MakeActionBar();
+            root.Controls.Add(actions, 0, 3);
+            FlowLayoutPanel left = MakeLeftActions();
+            actions.Controls.Add(left, 0, 0);
+            Button add = MakeButton("Добавить", true); add.Margin = new Padding(0, 0, 8, 0); add.Click += AddSanatorium;
+            Button editBtn = MakeButton("Изменить", false); editBtn.Margin = new Padding(0, 0, 8, 0); editBtn.Click += EditSanatorium;
+            Button del = MakeButton("Удалить", false); del.Click += DeleteSanatorium;
+            left.Controls.Add(add); left.Controls.Add(editBtn); left.Controls.Add(del);
+            Button close = MakeButton("Назад", false); close.Click += delegate { Close(); };
+            FlowLayoutPanel right = MakeRightActions();
+            right.Controls.Add(close);
+            actions.Controls.Add(right, 1, 0);
 
             Load += delegate
             {
                 Guard(delegate
                 {
+<<<<<<< HEAD
                     FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true);
+=======
+                    FillLookup(profile, Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName", true, "Профиль: все");
+>>>>>>> c092d92 (Update repository with latest local changes)
                     LoadGrid();
                 });
             };
+            profile.SelectedIndexChanged += delegate { Debouncer.Debounce("sanatoriums_profile", LoadGrid, 200); };
+            onlyActive.CheckedChanged += delegate { LoadGrid(); };
         }
 
         private void LoadGrid()
@@ -2043,6 +2130,27 @@ internal sealed class MainForm : GlassForm
             });
         }
 
+        private void EditSanatorium(object sender, EventArgs e)
+        {
+            Guard(delegate
+            {
+                if (grid.SelectedRows.Count == 0)
+                {
+                    MessageBox.Show("Выберите санаторий для редактирования.", "Редактирование", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                int id = Convert.ToInt32(grid.SelectedRows[0].Cells[0].Value);
+                using (SanatoriumEditForm form = new SanatoriumEditForm(Db, id))
+                {
+                    if (form.ShowDialog(this) == DialogResult.OK)
+                    {
+                        LoadGrid();
+                        ToastNotifier.Show(this, "Данные санатория обновлены", true);
+                    }
+                }
+            });
+        }
+
         private void DeleteSanatorium(object sender, EventArgs e)
         {
             Guard(delegate
@@ -2075,7 +2183,7 @@ internal abstract class RecordFormBase : GlassForm
     {
         Text = title;
         Size = size;
-        MinimumSize = new Size(Math.Max(920, size.Width), Math.Max(620, size.Height));
+        MinimumSize = new Size(Math.Max(680, size.Width), Math.Max(480, size.Height));
         MaximizeBox = false;
 
         Panel = new GlassPanel();
@@ -2216,13 +2324,14 @@ internal abstract class RecordFormBase : GlassForm
     {
         Button ok = new GlassButton();
         ok.Text = "Сохранить";
-        ok.SetBounds(0, 0, 130, 38);
+        ok.Size = new Size(130, 38);
+        ok.Margin = new Padding(8, 0, 0, 0);
         Theme.StyleButton(ok, true);
         ok.Click += save;
 
         Button cancel = new GlassButton();
         cancel.Text = "Отмена";
-        cancel.SetBounds(0, 0, 120, 38);
+        cancel.Size = new Size(120, 38);
         Theme.StyleButton(cancel, false);
         cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
 
@@ -2256,6 +2365,37 @@ internal abstract class RecordFormBase : GlassForm
         return true;
     }
 
+    protected void SelectLookup(ComboBox combo, int id)
+    {
+        foreach (object item in combo.Items)
+        {
+            LookupItem lookupItem = item as LookupItem;
+            if (lookupItem != null && lookupItem.Id == id)
+            {
+                combo.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    protected void SelectComboText(ComboBox combo, string value)
+    {
+        for (int i = 0; i < combo.Items.Count; i++)
+        {
+            if (string.Equals(Convert.ToString(combo.Items[i]), value, StringComparison.Ordinal))
+            {
+                combo.SelectedIndex = i;
+                return;
+            }
+        }
+    }
+
+    protected string DbString(DataRow row, string column)
+    {
+        object value = row[column];
+        return value == null || value == DBNull.Value ? "" : Convert.ToString(value);
+    }
+
     private void AddFieldLabel(string text)
     {
         Label label = Theme.Label(text, Theme.BaseFont, Theme.Muted);
@@ -2269,6 +2409,7 @@ internal abstract class RecordFormBase : GlassForm
 
     internal sealed class PensionerEditForm : RecordFormBase
     {
+        private readonly int editId;
         private readonly ComboBox region;
         private readonly ComboBox category;
         private readonly TextBox last;
@@ -2281,8 +2422,13 @@ internal abstract class RecordFormBase : GlassForm
         private readonly TextBox phone;
         private readonly TextBox address;
 
-        public PensionerEditForm(DbContext db) : base(db, "Добавление пенсионера", new Size(720, 690))
+        public PensionerEditForm(DbContext db, int editId = 0)
+            : base(db, editId == 0 ? "Добавление пенсионера" : "Редактирование пенсионера", new Size(720, 690))
         {
+<<<<<<< HEAD
+=======
+            this.editId = editId;
+>>>>>>> c092d92 (Update repository with latest local changes)
             region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             category = AddLookup("Категория", Db.LookupCached("tblPensionerCategories", "CategoryID", "CategoryName"), "CategoryID", "CategoryName");
             last = AddText("Фамилия *", "", 330);
@@ -2290,11 +2436,38 @@ internal abstract class RecordFormBase : GlassForm
             middle = AddText("Отчество", "", 330);
             gender = AddSimpleCombo("Пол", new string[] { "М", "Ж" });
             birth = AddDate("Дата рождения", DateTime.Today.AddYears(-65));
-            certificate = AddText("Удостоверение *", "PEN-" + DateTime.Now.ToString("yyyyMMddHHmmss"), 330);
+            certificate = AddText("Удостоверение *", editId == 0 ? "PEN-" + DateTime.Now.ToString("yyyyMMddHHmmss") : "", 330);
             snils = AddText("СНИЛС", "", 250);
             phone = AddText("Телефон", "", 250);
             address = AddText("Адрес", "", 380);
             AddActions(Save);
+            if (editId > 0)
+            {
+                Load += delegate { LoadExisting(); };
+            }
+        }
+
+        private void LoadExisting()
+        {
+            Guard(delegate
+            {
+                DataTable dt = Db.Query("SELECT * FROM tblPensioners WHERE PensionerID = ?", new OleDbParameter("id", editId));
+                if (dt.Rows.Count == 0) return;
+                DataRow row = dt.Rows[0];
+                SelectLookup(region, Convert.ToInt32(row["RegionID"]));
+                SelectLookup(category, Convert.ToInt32(row["CategoryID"]));
+                last.Text = DbString(row, "LastName");
+                first.Text = DbString(row, "FirstName");
+                middle.Text = DbString(row, "MiddleName");
+                SelectComboText(gender, DbString(row, "Gender"));
+                object birthVal = row["BirthDate"];
+                if (birthVal != null && birthVal != DBNull.Value)
+                    birth.Value = Convert.ToDateTime(birthVal);
+                certificate.Text = DbString(row, "PensionCertificateNo");
+                snils.Text = DbString(row, "SNILS");
+                phone.Text = DbString(row, "Phone");
+                address.Text = DbString(row, "Address");
+            });
         }
 
         private void Save(object sender, EventArgs e)
@@ -2302,18 +2475,39 @@ internal abstract class RecordFormBase : GlassForm
             Guard(delegate
             {
                 if (!Require(last, first, certificate)) return;
-                Db.Execute("INSERT INTO tblPensioners (RegionID, CategoryID, LastName, FirstName, MiddleName, Gender, BirthDate, PensionCertificateNo, SNILS, Phone, Address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    new OleDbParameter("region", SelectedId(region)),
-                    new OleDbParameter("category", SelectedId(category)),
-                    new OleDbParameter("last", last.Text.Trim()),
-                    new OleDbParameter("first", first.Text.Trim()),
-                    new OleDbParameter("middle", Optional(middle.Text)),
-                    new OleDbParameter("gender", Convert.ToString(gender.SelectedItem)),
-                    new OleDbParameter("birth", birth.Value.Date),
-                    new OleDbParameter("certificate", certificate.Text.Trim()),
-                    new OleDbParameter("snils", Optional(snils.Text)),
-                    new OleDbParameter("phone", Optional(phone.Text)),
-                    new OleDbParameter("address", Optional(address.Text)));
+                if (editId > 0)
+                {
+                    Db.Execute(
+                        "UPDATE tblPensioners SET RegionID=?, CategoryID=?, LastName=?, FirstName=?, MiddleName=?, Gender=?, BirthDate=?, PensionCertificateNo=?, SNILS=?, Phone=?, Address=? WHERE PensionerID=?",
+                        new OleDbParameter("region", SelectedId(region)),
+                        new OleDbParameter("category", SelectedId(category)),
+                        new OleDbParameter("last", last.Text.Trim()),
+                        new OleDbParameter("first", first.Text.Trim()),
+                        new OleDbParameter("middle", Optional(middle.Text)),
+                        new OleDbParameter("gender", Convert.ToString(gender.SelectedItem)),
+                        new OleDbParameter("birth", birth.Value.Date),
+                        new OleDbParameter("certificate", certificate.Text.Trim()),
+                        new OleDbParameter("snils", Optional(snils.Text)),
+                        new OleDbParameter("phone", Optional(phone.Text)),
+                        new OleDbParameter("address", Optional(address.Text)),
+                        new OleDbParameter("id", editId));
+                }
+                else
+                {
+                    Db.Execute(
+                        "INSERT INTO tblPensioners (RegionID, CategoryID, LastName, FirstName, MiddleName, Gender, BirthDate, PensionCertificateNo, SNILS, Phone, Address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        new OleDbParameter("region", SelectedId(region)),
+                        new OleDbParameter("category", SelectedId(category)),
+                        new OleDbParameter("last", last.Text.Trim()),
+                        new OleDbParameter("first", first.Text.Trim()),
+                        new OleDbParameter("middle", Optional(middle.Text)),
+                        new OleDbParameter("gender", Convert.ToString(gender.SelectedItem)),
+                        new OleDbParameter("birth", birth.Value.Date),
+                        new OleDbParameter("certificate", certificate.Text.Trim()),
+                        new OleDbParameter("snils", Optional(snils.Text)),
+                        new OleDbParameter("phone", Optional(phone.Text)),
+                        new OleDbParameter("address", Optional(address.Text)));
+                }
                 DialogResult = DialogResult.OK;
                 Close();
             });
@@ -2322,6 +2516,7 @@ internal abstract class RecordFormBase : GlassForm
 
     internal sealed class VoucherEditForm : RecordFormBase
     {
+        private readonly int editId;
         private readonly TextBox number;
         private readonly ComboBox pensioner;
         private readonly ComboBox sanatorium;
@@ -2333,9 +2528,11 @@ internal abstract class RecordFormBase : GlassForm
         private readonly NumericUpDown copay;
         private readonly TextBox notes;
 
-        public VoucherEditForm(DbContext db) : base(db, "Добавление путевки", new Size(760, 660))
+        public VoucherEditForm(DbContext db, int editId = 0)
+            : base(db, editId == 0 ? "Добавление путевки" : "Редактирование путевки", new Size(760, 660))
         {
-            number = AddText("Номер путевки *", "V-" + DateTime.Now.ToString("yyyyMMddHHmmss"), 300);
+            this.editId = editId;
+            number = AddText("Номер путевки *", editId == 0 ? "V-" + DateTime.Now.ToString("yyyyMMddHHmmss") : "", 300);
             pensioner = AddLookup("Пенсионер", Db.Query("SELECT PensionerID, LastName & ' ' & FirstName & ' (' & PensionCertificateNo & ')' AS FullName FROM tblPensioners ORDER BY LastName, FirstName"), "PensionerID", "FullName");
             sanatorium = AddLookup("Санаторий", Db.LookupCached("tblSanatoriums", "SanatoriumID", "SanatoriumName"), "SanatoriumID", "SanatoriumName");
             funding = AddLookup("Источник", Db.LookupCached("tblFundingSources", "FundingSourceID", "FundingSourceName"), "FundingSourceID", "FundingSourceName");
@@ -2346,6 +2543,35 @@ internal abstract class RecordFormBase : GlassForm
             copay = AddNumber("Доплата, %", 0, 100);
             notes = AddText("Примечание", "", 380);
             AddActions(Save);
+            if (editId > 0)
+            {
+                Load += delegate { LoadExisting(); };
+            }
+        }
+
+        private void LoadExisting()
+        {
+            Guard(delegate
+            {
+                DataTable dt = Db.Query("SELECT * FROM tblVoucherIssues WHERE IssueID = ?", new OleDbParameter("id", editId));
+                if (dt.Rows.Count == 0) return;
+                DataRow row = dt.Rows[0];
+                number.Text = DbString(row, "VoucherNo");
+                SelectLookup(pensioner, Convert.ToInt32(row["PensionerID"]));
+                SelectLookup(sanatorium, Convert.ToInt32(row["SanatoriumID"]));
+                SelectLookup(funding, Convert.ToInt32(row["FundingSourceID"]));
+                SelectLookup(status, Convert.ToInt32(row["StatusID"]));
+                object issued = row["IssueDate"];
+                if (issued != null && issued != DBNull.Value) issueDate.Value = Convert.ToDateTime(issued);
+                object started = row["StartDate"];
+                if (started != null && started != DBNull.Value) startDate.Value = Convert.ToDateTime(started);
+                object ended = row["EndDate"];
+                if (ended != null && ended != DBNull.Value) endDate.Value = Convert.ToDateTime(ended);
+                object copayVal = row["CoPaymentPercent"];
+                if (copayVal != null && copayVal != DBNull.Value)
+                    copay.Value = Math.Min(copay.Maximum, Math.Max(copay.Minimum, Convert.ToDecimal(copayVal)));
+                notes.Text = DbString(row, "Notes");
+            });
         }
 
         private void Save(object sender, EventArgs e)
@@ -2363,17 +2589,37 @@ internal abstract class RecordFormBase : GlassForm
                     MessageBox.Show("Дата выезда не может быть раньше даты заезда.", "Проверка", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
-                Db.Execute("INSERT INTO tblVoucherIssues (IssueDate, VoucherNo, PensionerID, SanatoriumID, FundingSourceID, StatusID, StartDate, EndDate, CoPaymentPercent, Notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    new OleDbParameter("issueDate", issueDate.Value.Date),
-                    new OleDbParameter("voucher", number.Text.Trim()),
-                    new OleDbParameter("pensioner", SelectedId(pensioner)),
-                    new OleDbParameter("sanatorium", SelectedId(sanatorium)),
-                    new OleDbParameter("funding", SelectedId(funding)),
-                    new OleDbParameter("status", SelectedId(status)),
-                    new OleDbParameter("startDate", startDate.Value.Date),
-                    new OleDbParameter("endDate", endDate.Value.Date),
-                    new OleDbParameter("copay", Convert.ToInt32(copay.Value)),
-                    new OleDbParameter("notes", Optional(notes.Text)));
+                if (editId > 0)
+                {
+                    Db.Execute(
+                        "UPDATE tblVoucherIssues SET IssueDate=?, VoucherNo=?, PensionerID=?, SanatoriumID=?, FundingSourceID=?, StatusID=?, StartDate=?, EndDate=?, CoPaymentPercent=?, Notes=? WHERE IssueID=?",
+                        new OleDbParameter("issueDate", issueDate.Value.Date),
+                        new OleDbParameter("voucher", number.Text.Trim()),
+                        new OleDbParameter("pensioner", SelectedId(pensioner)),
+                        new OleDbParameter("sanatorium", SelectedId(sanatorium)),
+                        new OleDbParameter("funding", SelectedId(funding)),
+                        new OleDbParameter("status", SelectedId(status)),
+                        new OleDbParameter("startDate", startDate.Value.Date),
+                        new OleDbParameter("endDate", endDate.Value.Date),
+                        new OleDbParameter("copay", Convert.ToInt32(copay.Value)),
+                        new OleDbParameter("notes", Optional(notes.Text)),
+                        new OleDbParameter("id", editId));
+                }
+                else
+                {
+                    Db.Execute(
+                        "INSERT INTO tblVoucherIssues (IssueDate, VoucherNo, PensionerID, SanatoriumID, FundingSourceID, StatusID, StartDate, EndDate, CoPaymentPercent, Notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        new OleDbParameter("issueDate", issueDate.Value.Date),
+                        new OleDbParameter("voucher", number.Text.Trim()),
+                        new OleDbParameter("pensioner", SelectedId(pensioner)),
+                        new OleDbParameter("sanatorium", SelectedId(sanatorium)),
+                        new OleDbParameter("funding", SelectedId(funding)),
+                        new OleDbParameter("status", SelectedId(status)),
+                        new OleDbParameter("startDate", startDate.Value.Date),
+                        new OleDbParameter("endDate", endDate.Value.Date),
+                        new OleDbParameter("copay", Convert.ToInt32(copay.Value)),
+                        new OleDbParameter("notes", Optional(notes.Text)));
+                }
                 DialogResult = DialogResult.OK;
                 Close();
             });
@@ -2382,6 +2628,7 @@ internal abstract class RecordFormBase : GlassForm
 
     internal sealed class SanatoriumEditForm : RecordFormBase
     {
+        private readonly int editId;
         private readonly ComboBox region;
         private readonly ComboBox profile;
         private readonly TextBox name;
@@ -2391,8 +2638,13 @@ internal abstract class RecordFormBase : GlassForm
         private readonly NumericUpDown price;
         private readonly CheckBox active;
 
-        public SanatoriumEditForm(DbContext db) : base(db, "Добавление санатория", new Size(720, 600))
+        public SanatoriumEditForm(DbContext db, int editId = 0)
+            : base(db, editId == 0 ? "Добавление санатория" : "Редактирование санатория", new Size(720, 600))
         {
+<<<<<<< HEAD
+=======
+            this.editId = editId;
+>>>>>>> c092d92 (Update repository with latest local changes)
             region = AddLookup("Регион", Db.LookupCached("tblRegions", "RegionID", "RegionName"), "RegionID", "RegionName");
             profile = AddLookup("Профиль", Db.LookupCached("tblMedicalProfiles", "ProfileID", "ProfileName"), "ProfileID", "ProfileName");
             name = AddText("Санаторий *", "", 360);
@@ -2402,6 +2654,34 @@ internal abstract class RecordFormBase : GlassForm
             price = AddNumber("Цена дня", 3500, 100000);
             active = AddCheck("Работает", true);
             AddActions(Save);
+            if (editId > 0)
+            {
+                Load += delegate { LoadExisting(); };
+            }
+        }
+
+        private void LoadExisting()
+        {
+            Guard(delegate
+            {
+                DataTable dt = Db.Query("SELECT * FROM tblSanatoriums WHERE SanatoriumID = ?", new OleDbParameter("id", editId));
+                if (dt.Rows.Count == 0) return;
+                DataRow row = dt.Rows[0];
+                SelectLookup(region, Convert.ToInt32(row["RegionID"]));
+                SelectLookup(profile, Convert.ToInt32(row["ProfileID"]));
+                name.Text = DbString(row, "SanatoriumName");
+                address.Text = DbString(row, "Address");
+                phone.Text = DbString(row, "Phone");
+                object bedsVal = row["CapacityBeds"];
+                if (bedsVal != null && bedsVal != DBNull.Value)
+                    beds.Value = Math.Min(beds.Maximum, Math.Max(beds.Minimum, Convert.ToDecimal(bedsVal)));
+                object priceVal = row["PricePerDay"];
+                if (priceVal != null && priceVal != DBNull.Value)
+                    price.Value = Math.Min(price.Maximum, Math.Max(price.Minimum, Convert.ToDecimal(priceVal)));
+                object activeVal = row["IsActive"];
+                if (activeVal != null && activeVal != DBNull.Value)
+                    active.Checked = Convert.ToBoolean(activeVal);
+            });
         }
 
         private void Save(object sender, EventArgs e)
@@ -2409,15 +2689,33 @@ internal abstract class RecordFormBase : GlassForm
             Guard(delegate
             {
                 if (!Require(name)) return;
-                Db.Execute("INSERT INTO tblSanatoriums (RegionID, ProfileID, SanatoriumName, Address, Phone, CapacityBeds, PricePerDay, IsActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    new OleDbParameter("region", SelectedId(region)),
-                    new OleDbParameter("profile", SelectedId(profile)),
-                    new OleDbParameter("name", name.Text.Trim()),
-                    new OleDbParameter("address", Optional(address.Text)),
-                    new OleDbParameter("phone", Optional(phone.Text)),
-                    new OleDbParameter("beds", Convert.ToInt32(beds.Value)),
-                    new OleDbParameter("price", price.Value),
-                    new OleDbParameter("active", active.Checked));
+                if (editId > 0)
+                {
+                    Db.Execute(
+                        "UPDATE tblSanatoriums SET RegionID=?, ProfileID=?, SanatoriumName=?, Address=?, Phone=?, CapacityBeds=?, PricePerDay=?, IsActive=? WHERE SanatoriumID=?",
+                        new OleDbParameter("region", SelectedId(region)),
+                        new OleDbParameter("profile", SelectedId(profile)),
+                        new OleDbParameter("name", name.Text.Trim()),
+                        new OleDbParameter("address", Optional(address.Text)),
+                        new OleDbParameter("phone", Optional(phone.Text)),
+                        new OleDbParameter("beds", Convert.ToInt32(beds.Value)),
+                        new OleDbParameter("price", price.Value),
+                        new OleDbParameter("active", active.Checked),
+                        new OleDbParameter("id", editId));
+                }
+                else
+                {
+                    Db.Execute(
+                        "INSERT INTO tblSanatoriums (RegionID, ProfileID, SanatoriumName, Address, Phone, CapacityBeds, PricePerDay, IsActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        new OleDbParameter("region", SelectedId(region)),
+                        new OleDbParameter("profile", SelectedId(profile)),
+                        new OleDbParameter("name", name.Text.Trim()),
+                        new OleDbParameter("address", Optional(address.Text)),
+                        new OleDbParameter("phone", Optional(phone.Text)),
+                        new OleDbParameter("beds", Convert.ToInt32(beds.Value)),
+                        new OleDbParameter("price", price.Value),
+                        new OleDbParameter("active", active.Checked));
+                }
                 DialogResult = DialogResult.OK;
                 Close();
             });
@@ -2476,10 +2774,10 @@ internal sealed class DataToolsForm : GlassForm
         actions.Padding = new Padding(0, 8, 0, 8);
         layout.Controls.Add(actions, 0, 3);
 
-        AddAction(actions, "Очистить журнал путевок", 0, 0, ClearJournal);
-        AddAction(actions, "Очистить пенсионеров и журнал", 0, 0, ClearPensioners);
-        AddAction(actions, "Очистить все демо-данные", 0, 0, ClearAll);
-        AddAction(actions, "Обновить статистику", 0, 0, delegate { RefreshStats(); ToastNotifier.Show(this, "Статистика обновлена", true); });
+        AddAction(actions, "Очистить журнал путевок", ClearJournal);
+        AddAction(actions, "Очистить пенсионеров и журнал", ClearPensioners);
+        AddAction(actions, "Очистить все демо-данные", ClearAll);
+        AddAction(actions, "Обновить статистику", delegate { RefreshStats(); ToastNotifier.Show(this, "Статистика обновлена", true); });
 
         FlowLayoutPanel footer = new FlowLayoutPanel();
         footer.Dock = DockStyle.Fill;
@@ -2490,22 +2788,19 @@ internal sealed class DataToolsForm : GlassForm
         footer.Padding = new Padding(0, 12, 0, 0);
         layout.Controls.Add(footer, 0, 4);
 
-        Button close = new GlassButton();
-        close.Text = "Назад";
-        close.SetBounds(0, 0, 134, 40);
-        Theme.StyleButton(close, false);
+        Button close = MakeButton("Назад", false);
         close.Click += delegate { Close(); };
         footer.Controls.Add(close);
 
         Load += delegate { RefreshStats(); };
     }
 
-    private void AddAction(Control parent, string text, int x, int y, EventHandler click)
+    private void AddAction(Control parent, string text, EventHandler click)
     {
         Button button = new GlassButton();
         button.Text = text;
-        button.SetBounds(x, y, 250, 62);
-        button.Margin = new Padding(0, 0, 14, 14);
+        button.Size = new Size(240, 58);
+        button.Margin = new Padding(0, 0, 12, 12);
         Theme.StyleButton(button, text.IndexOf("все", StringComparison.OrdinalIgnoreCase) >= 0);
         button.Click += click;
         parent.Controls.Add(button);
@@ -2515,9 +2810,10 @@ internal sealed class DataToolsForm : GlassForm
     {
         Guard(delegate
         {
-            stats.Text = "Пенсионеры: " + Db.ScalarInt("SELECT Count(*) FROM tblPensioners") +
-                         "   Путевки: " + Db.ScalarInt("SELECT Count(*) FROM tblVoucherIssues") +
-                         "   Санатории: " + Db.ScalarInt("SELECT Count(*) FROM tblSanatoriums");
+            stats.Text =
+                Db.ScalarInt("SELECT Count(*) FROM tblPensioners") + " пенсионеров  ·  " +
+                Db.ScalarInt("SELECT Count(*) FROM tblVoucherIssues") + " путевок  ·  " +
+                Db.ScalarInt("SELECT Count(*) FROM tblSanatoriums") + " санаториев";
         });
     }
 
@@ -3138,11 +3434,6 @@ internal sealed class PrintOptionsForm : Form
             WriteImagePdf(path, pages);
         }
 
-        public static System.Threading.Tasks.Task ExportAsync(string path, string title, string subtitle, List<string> headers, List<string[]> rows)
-        {
-            return System.Threading.Tasks.Task.Run(() => Export(path, title, subtitle, headers, rows));
-        }
-
         private static List<byte[]> RenderPages(string title, string subtitle, List<string> headers, List<string[]> rows)
         {
             List<byte[]> images = new List<byte[]>();
@@ -3459,9 +3750,9 @@ internal sealed class PrintOptionsForm : Form
             table.Rows.Add("1", "Запустите Setup.exe и выберите папку установки.");
             table.Rows.Add("2", "Дождитесь завершения установки и проверьте, что файлы UserGuide.txt, UserGuide.rtf и UserGuide.pdf появились в целевой папке.");
             table.Rows.Add("3", "Запустите HealthcareSanatoriumInterface.exe. Откроется главное меню.");
-            table.Rows.Add("4", "Нажмите “Пенсионеры”, чтобы добавить или удалить записи пенсионеров. Используйте фильтры и поиск.");
-            table.Rows.Add("5", "Нажмите “Журнал путевок” для работы с путевками, фильтрами и печатью отчётов.");
-            table.Rows.Add("6", "Нажмите “Санатории”, чтобы просматривать и добавлять новые санатории.");
+            table.Rows.Add("4", "Нажмите Пенсионеры для работы с записями. Поиск срабатывает автоматически. Для изменения — кнопка Изменить или двойной клик по строке.");
+            table.Rows.Add("5", "Нажмите Журнал путевок для работы с путевками. Фильтры применяются мгновенно. Редактирование — двойной клик или кнопка Изменить.");
+            table.Rows.Add("6", "Нажмите Санатории для просмотра и редактирования справочника. Двойной клик по строке открывает форму изменения.");
             table.Rows.Add("7", "Нажмите “Сервис данных” для очистки демонстрационных записей и проверки состояния базы.");
             table.Rows.Add("8", "Используйте кнопки “Открыть PDF”, “Открыть RTF” и “Открыть TXT”, чтобы посмотреть руководство пользователя.");
             table.Rows.Add("9", "Для печати отчетов выбирайте режимы PDF или прямую печать в окне журнала путевок.");
@@ -3515,8 +3806,6 @@ internal sealed class PrintOptionsForm : Form
                 this.success = success;
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
-                TopMost = false;
-                
                 int lineCount = message.Split(new[] { "\n" }, StringSplitOptions.None).Length;
                 Width = 420;
                 Height = 70 + (lineCount > 1 ? (lineCount - 1) * 18 : 0);
@@ -3602,42 +3891,6 @@ internal sealed class PrintOptionsForm : Form
         }
     }
 
-    internal static class Prompt
-    {
-        public static string Show(string text, string caption)
-        {
-            using (Form form = new Form())
-            using (Label label = new Label())
-            using (TextBox box = new TextBox())
-            using (Button ok = new GlassButton())
-            using (Button cancel = new GlassButton())
-            {
-                form.Text = caption;
-                form.FormBorderStyle = FormBorderStyle.FixedDialog;
-                form.StartPosition = FormStartPosition.CenterParent;
-                form.ClientSize = new Size(420, 140);
-                form.MinimizeBox = false;
-                form.MaximizeBox = false;
-                label.Text = text;
-                label.SetBounds(16, 16, 380, 24);
-                box.SetBounds(16, 48, 384, 26);
-                ok.Text = "OK";
-                ok.DialogResult = DialogResult.OK;
-                ok.SetBounds(220, 92, 84, 32);
-                cancel.Text = "Отмена";
-                cancel.DialogResult = DialogResult.Cancel;
-                cancel.SetBounds(316, 92, 84, 32);
-                form.Controls.Add(label);
-                form.Controls.Add(box);
-                form.Controls.Add(ok);
-                form.Controls.Add(cancel);
-                form.AcceptButton = ok;
-                form.CancelButton = cancel;
-                return form.ShowDialog() == DialogResult.OK ? box.Text : "";
-            }
-        }
-    }
-
     internal static class ReportRunner
     {
         public static bool OpenReport(string databasePath, string reportName, bool print)
@@ -3684,9 +3937,10 @@ internal sealed class PrintOptionsForm : Form
         }
     }
 
-    internal sealed class DocumentViewerForm : Form
+    internal sealed class DocumentViewerForm : GlassForm
     {
         public DocumentViewerForm(string filePath, string title)
+            : base(null)
         {
             Text = title;
             Width = 900;
