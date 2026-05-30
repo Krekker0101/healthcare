@@ -176,7 +176,7 @@ def main():
         ] + setup_resources + [str(setup_host)])
         installer_built = True
     else:
-        print("WARNING: installer/SetupHost.cs not found; installer build skipped.")
+        print("INFO: installer/SetupHost.cs not found; installer build skipped.")
 
     shutil.rmtree(payload, ignore_errors=True)
 
