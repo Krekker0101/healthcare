@@ -39,15 +39,37 @@ namespace HealthcareSanatoriumInterface
 
             bool hasX64 = File.Exists(x64);
             bool hasX86 = File.Exists(x86);
+            bool provider64 = Environment.Is64BitOperatingSystem && HasAnyProvider(RegistryView.Registry64);
+            bool provider32 = HasAnyProvider(RegistryView.Registry32);
+            bool access64 = Environment.Is64BitOperatingSystem && IsAccessInstalled(RegistryView.Registry64);
+            bool access32 = IsAccessInstalled(RegistryView.Registry32);
 
-            if (Environment.Is64BitOperatingSystem && hasX64 && IsProviderInstalled("Microsoft.ACE.OLEDB.16.0", RegistryView.Registry64))
+            if (hasX64 && provider64 && access64)
             {
                 return x64;
             }
 
-            if (hasX86 && (IsProviderInstalled("Microsoft.ACE.OLEDB.16.0", RegistryView.Registry32) ||
-                           IsProviderInstalled("Microsoft.ACE.OLEDB.12.0", RegistryView.Registry32) ||
-                           IsProviderInstalled("Microsoft.Jet.OLEDB.4.0", RegistryView.Registry32)))
+            if (hasX86 && provider32 && access32)
+            {
+                return x86;
+            }
+
+            if (hasX64 && provider64)
+            {
+                return x64;
+            }
+
+            if (hasX86 && provider32)
+            {
+                return x86;
+            }
+
+            if (hasX64 && access64)
+            {
+                return x64;
+            }
+
+            if (hasX86 && access32)
             {
                 return x86;
             }
@@ -63,6 +85,40 @@ namespace HealthcareSanatoriumInterface
             }
 
             return null;
+        }
+
+        private static bool HasAnyProvider(RegistryView view)
+        {
+            return IsProviderInstalled("Microsoft.ACE.OLEDB.16.0", view) ||
+                   IsProviderInstalled("Microsoft.ACE.OLEDB.12.0", view) ||
+                   IsProviderInstalled("Microsoft.Jet.OLEDB.4.0", view);
+        }
+
+        private static bool IsAccessInstalled(RegistryView view)
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, view))
+                {
+                    if (root.OpenSubKey(@"Access.Application\CLSID") != null) return true;
+                    if (root.OpenSubKey(@"Access.Application.16\CLSID") != null) return true;
+                    if (root.OpenSubKey(@"Access.Application.15\CLSID") != null) return true;
+                    if (root.OpenSubKey(@"Access.Application.14\CLSID") != null) return true;
+                }
+
+                using (RegistryKey root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                {
+                    using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\MSACCESS.EXE"))
+                    {
+                        if (key != null && !string.IsNullOrWhiteSpace(Convert.ToString(key.GetValue(null)))) return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
         }
 
         private static bool IsProviderInstalled(string providerName, RegistryView view)
