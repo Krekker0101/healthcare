@@ -78,16 +78,19 @@ namespace HealthcareSanatoriumInterface
         private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
 
         public static bool Dark = false;
-        public static Color Ink { get { return Dark ? Color.FromArgb(232, 238, 248) : Color.FromArgb(24, 31, 44); } }
-        public static Color Muted { get { return Dark ? Color.FromArgb(164, 176, 196) : Color.FromArgb(91, 107, 129); } }
-        public static Color Line { get { return Dark ? Color.FromArgb(64, 78, 105) : Color.FromArgb(207, 216, 230); } }
-        public static Color Surface { get { return Dark ? Color.FromArgb(20, 27, 42) : Color.White; } }
-        public static Color Field { get { return Dark ? Color.FromArgb(28, 37, 56) : Color.White; } }
-        public static Color Blue { get { return Dark ? Color.FromArgb(74, 144, 255) : Color.FromArgb(0, 122, 255); } }
-        public static Color Green { get { return Dark ? Color.FromArgb(61, 220, 132) : Color.FromArgb(52, 199, 89); } }
+        public static Color Ink { get { return Dark ? Color.FromArgb(238, 244, 255) : Color.FromArgb(15, 23, 42); } }
+        public static Color Muted { get { return Dark ? Color.FromArgb(160, 174, 199) : Color.FromArgb(100, 116, 139); } }
+        public static Color Line { get { return Dark ? Color.FromArgb(56, 71, 102) : Color.FromArgb(218, 226, 238); } }
+        public static Color Surface { get { return Dark ? Color.FromArgb(19, 27, 44) : Color.FromArgb(255, 255, 255); } }
+        public static Color SurfaceAlt { get { return Dark ? Color.FromArgb(25, 35, 56) : Color.FromArgb(248, 251, 255); } }
+        public static Color Field { get { return Dark ? Color.FromArgb(29, 40, 62) : Color.FromArgb(255, 255, 255); } }
+        public static Color Blue { get { return Dark ? Color.FromArgb(96, 165, 250) : Color.FromArgb(37, 99, 235); } }
+        public static Color Blue2 { get { return Dark ? Color.FromArgb(34, 211, 238) : Color.FromArgb(14, 165, 233); } }
+        public static Color Green { get { return Dark ? Color.FromArgb(52, 211, 153) : Color.FromArgb(16, 185, 129); } }
+        public static Color AccentSoft { get { return Dark ? Color.FromArgb(35, 55, 87) : Color.FromArgb(232, 242, 255); } }
         public static readonly Font BaseFont = new Font("Segoe UI", 10f, FontStyle.Regular);
-        public static readonly Font TitleFont = new Font("Segoe UI Semibold", 21f, FontStyle.Bold);
-        public static readonly Font H2Font = new Font("Segoe UI Semibold", 14f, FontStyle.Bold);
+        public static readonly Font TitleFont = new Font("Segoe UI Semibold", 22f, FontStyle.Bold);
+        public static readonly Font H2Font = new Font("Segoe UI Semibold", 15f, FontStyle.Bold);
         public static readonly Font ButtonFont = new Font("Segoe UI Semibold", 10f, FontStyle.Bold);
         public static readonly Font ButtonCaptionFont = new Font("Segoe UI Semibold", 9.6f, FontStyle.Bold);
         public static readonly Font ButtonTitleFont = new Font("Segoe UI Semibold", 10.2f, FontStyle.Bold);
@@ -107,8 +110,8 @@ namespace HealthcareSanatoriumInterface
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderSize = primary ? 0 : 1;
             button.FlatAppearance.BorderColor = Line;
-            button.FlatAppearance.MouseOverBackColor = Dark ? Color.FromArgb(38, 52, 78) : Color.FromArgb(238, 246, 255);
-            button.FlatAppearance.MouseDownBackColor = Dark ? Color.FromArgb(24, 34, 54) : Color.FromArgb(219, 236, 255);
+            button.FlatAppearance.MouseOverBackColor = Dark ? Color.FromArgb(40, 56, 86) : Color.FromArgb(239, 246, 255);
+            button.FlatAppearance.MouseDownBackColor = Dark ? Color.FromArgb(27, 38, 61) : Color.FromArgb(219, 234, 254);
             button.UseVisualStyleBackColor = false;
             button.BackColor = glass == null ? (primary ? Blue : Surface) : Color.Transparent;
             button.ForeColor = primary ? Color.White : Ink;
@@ -152,24 +155,27 @@ namespace HealthcareSanatoriumInterface
             grid.MultiSelect = false;
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-            grid.RowTemplate.Height = 30;
-            grid.ColumnHeadersHeight = 34;
+            grid.RowTemplate.Height = 34;
+            grid.ColumnHeadersHeight = 38;
             grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
             grid.ShowCellToolTips = false;
             grid.BackgroundColor = Surface;
             grid.BorderStyle = BorderStyle.None;
             grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Dark ? Color.FromArgb(35, 46, 68) : Color.FromArgb(246, 248, 252);
+            grid.ColumnHeadersDefaultCellStyle.BackColor = Dark ? Color.FromArgb(27, 38, 61) : Color.FromArgb(241, 246, 253);
             grid.ColumnHeadersDefaultCellStyle.ForeColor = Ink;
             grid.ColumnHeadersDefaultCellStyle.Font = GridHeaderFont;
+            grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 8, 0);
             grid.DefaultCellStyle.Font = GridCellFont;
             grid.DefaultCellStyle.BackColor = Surface;
             grid.DefaultCellStyle.ForeColor = Ink;
-            grid.DefaultCellStyle.SelectionBackColor = Dark ? Color.FromArgb(50, 76, 116) : Color.FromArgb(224, 239, 255);
+            grid.DefaultCellStyle.Padding = new Padding(8, 0, 8, 0);
+            grid.DefaultCellStyle.SelectionBackColor = Dark ? Color.FromArgb(37, 63, 105) : Color.FromArgb(219, 234, 254);
             grid.DefaultCellStyle.SelectionForeColor = Ink;
-            grid.AlternatingRowsDefaultCellStyle.BackColor = Dark ? Color.FromArgb(24, 33, 50) : Color.FromArgb(250, 252, 255);
+            grid.AlternatingRowsDefaultCellStyle.BackColor = Dark ? Color.FromArgb(22, 31, 50) : Color.FromArgb(248, 251, 255);
             grid.RowHeadersVisible = false;
-            grid.GridColor = Dark ? Color.FromArgb(54, 66, 88) : Color.FromArgb(230, 235, 244);
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            grid.GridColor = Dark ? Color.FromArgb(45, 58, 82) : Color.FromArgb(232, 238, 248);
             grid.Dock = DockStyle.Fill;
             try
             {
@@ -179,7 +185,7 @@ namespace HealthcareSanatoriumInterface
         }
 
         // Shared form background — must match GlassForm.FormBgColor()
-        public static Color FormBackground { get { return Dark ? Color.FromArgb(18, 24, 38) : Color.FromArgb(220, 230, 248); } }
+        public static Color FormBackground { get { return Dark ? Color.FromArgb(10, 16, 28) : Color.FromArgb(229, 238, 250); } }
 
         public static void ApplyTo(Control root)
         {
@@ -241,10 +247,31 @@ namespace HealthcareSanatoriumInterface
                 else if (control is Label)
                 {
                     control.BackColor = Color.Transparent;
-                    control.ForeColor = control.Font.Bold ? Ink : Muted;
+                    control.ForeColor = string.Equals(control.Tag as string, "accent", StringComparison.OrdinalIgnoreCase) ? Blue : (control.Font.Bold ? Ink : Muted);
                 }
                 ApplyTo(control);
             }
+        }
+    }
+
+
+    internal static class UiShapes
+    {
+        public static GraphicsPath RoundedRect(Rectangle bounds, int radius)
+        {
+            int diameter = Math.Max(2, radius * 2);
+            Rectangle arc = new Rectangle(bounds.Location, new Size(diameter, diameter));
+            GraphicsPath path = new GraphicsPath();
+
+            path.AddArc(arc, 180, 90);
+            arc.X = bounds.Right - diameter;
+            path.AddArc(arc, 270, 90);
+            arc.Y = bounds.Bottom - diameter;
+            path.AddArc(arc, 0, 90);
+            arc.X = bounds.Left;
+            path.AddArc(arc, 90, 90);
+            path.CloseFigure();
+            return path;
         }
     }
 
@@ -852,7 +879,7 @@ public class GlassForm : Form
             // Update embedded (non-toplevel) form background
             Form f = c as Form;
             if (f != null && !f.TopLevel)
-                f.BackColor = Theme.Dark ? Color.FromArgb(18, 24, 38) : Color.FromArgb(220, 230, 248);
+                f.BackColor = Theme.FormBackground;
 
             RefreshGlassPanels(c); // always recurse — catches nested panels + embedded forms
         }
@@ -862,45 +889,82 @@ public class GlassForm : Form
 
     internal sealed class GlassPanel : Panel
     {
+        private const int Radius = 18;
+
         public GlassPanel()
         {
-            DoubleBuffered = true;
-            Padding = new Padding(18);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+            Padding = new Padding(20);
             UpdatePanelColor();
         }
 
         public void InvalidatePanelCache()
         {
             UpdatePanelColor();
+            ApplyRoundedRegion();
             Invalidate();
         }
 
         private void UpdatePanelColor()
         {
-            BackColor = Theme.Dark ? Color.FromArgb(24, 34, 54) : Color.White;
+            BackColor = Theme.Surface;
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            ApplyRoundedRegion();
+        }
+
+        private void ApplyRoundedRegion()
+        {
+            if (Width <= 1 || Height <= 1) return;
+            Region oldRegion = Region;
+            using (GraphicsPath path = UiShapes.RoundedRect(new Rectangle(0, 0, Width, Height), Radius))
+            {
+                Region = new Region(path);
+            }
+            if (oldRegion != null)
+            {
+                oldRegion.Dispose();
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-            // Simple 1px border — instant, no GDI+ path allocation
-            Color borderColor = Theme.Dark ? Color.FromArgb(44, 60, 90) : Color.FromArgb(208, 218, 235);
-            using (Pen pen = new Pen(borderColor, 1f))
-                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
-            // Subtle bottom shadow line
-            using (Pen shadow = new Pen(Theme.Dark ? Color.FromArgb(10, 0, 0, 0) : Color.FromArgb(18, 100, 130, 180), 2f))
-                e.Graphics.DrawLine(shadow, 3, Height - 1, Width - 3, Height - 1);
+            Rectangle r = new Rectangle(0, 0, Width - 1, Height - 1);
+            if (r.Width <= 0 || r.Height <= 0) return;
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Color top = Theme.Dark ? Color.FromArgb(27, 38, 61) : Color.FromArgb(255, 255, 255);
+            Color bottom = Theme.Dark ? Color.FromArgb(18, 27, 45) : Color.FromArgb(247, 251, 255);
+            Color borderColor = Theme.Dark ? Color.FromArgb(58, 74, 108) : Color.FromArgb(210, 222, 240);
+
+            using (GraphicsPath path = UiShapes.RoundedRect(r, Radius))
+            using (LinearGradientBrush brush = new LinearGradientBrush(r, top, bottom, LinearGradientMode.Vertical))
+            using (Pen border = new Pen(borderColor, 1f))
+            {
+                e.Graphics.FillPath(brush, path);
+                e.Graphics.DrawPath(border, path);
+            }
+
+            using (Pen glow = new Pen(Theme.Dark ? Color.FromArgb(36, Theme.Blue) : Color.FromArgb(38, Theme.Blue), 2f))
+                e.Graphics.DrawLine(glow, Radius, 1, Width - Radius, 1);
+
+            using (Pen shadow = new Pen(Theme.Dark ? Color.FromArgb(38, 0, 0, 0) : Color.FromArgb(26, 99, 125, 170), 2f))
+                e.Graphics.DrawLine(shadow, Radius, Height - 2, Width - Radius, Height - 2);
         }
     }
 
     internal sealed class GlassButton : Button
     {
+        private const int Radius = 14;
         private bool _hot;
         private bool _pressed;
 
         public GlassButton()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable | ControlStyles.UserPaint, true);
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
         }
@@ -912,43 +976,71 @@ public class GlassForm : Form
         protected override void OnMouseLeave(EventArgs e) { _hot = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
         protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
         protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            Rectangle r = ClientRectangle;
-            Color bg, fg, borderColor;
+            Rectangle r = new Rectangle(0, 0, Width - 1, Height - 1);
+            if (r.Width <= 0 || r.Height <= 0) return;
 
-            if (Primary)
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Color top, bottom, fg, borderColor;
+
+            if (!Enabled)
             {
-                bg = _pressed ? Color.FromArgb(29, 78, 216)
-                   : _hot     ? Color.FromArgb(37, 99, 235)
-                              : Color.FromArgb(59, 130, 246);
+                top = bottom = Theme.Dark ? Color.FromArgb(26, 34, 50) : Color.FromArgb(241, 245, 249);
+                fg = Theme.Muted;
+                borderColor = Theme.Line;
+            }
+            else if (Primary)
+            {
+                top = _pressed ? Color.FromArgb(30, 64, 175) : (_hot ? Color.FromArgb(59, 130, 246) : Color.FromArgb(37, 99, 235));
+                bottom = _pressed ? Color.FromArgb(29, 78, 216) : (_hot ? Color.FromArgb(14, 165, 233) : Color.FromArgb(29, 78, 216));
                 fg = Color.White;
                 borderColor = Color.Transparent;
             }
             else if (Theme.Dark)
             {
-                bg = _pressed ? Color.FromArgb(20, 30, 50)
-                   : _hot     ? Color.FromArgb(38, 52, 80)
-                              : Color.FromArgb(30, 42, 65);
+                top = _pressed ? Color.FromArgb(24, 35, 56) : (_hot ? Color.FromArgb(40, 56, 86) : Color.FromArgb(29, 40, 62));
+                bottom = _pressed ? Color.FromArgb(20, 29, 48) : (_hot ? Color.FromArgb(32, 46, 72) : Color.FromArgb(24, 34, 54));
                 fg = Theme.Ink;
-                borderColor = Color.FromArgb(52, 70, 105);
+                borderColor = Color.FromArgb(60, 78, 114);
             }
             else
             {
-                bg = _pressed ? Color.FromArgb(219, 228, 242)
-                   : _hot     ? Color.FromArgb(237, 243, 252)
-                              : Color.FromArgb(248, 250, 254);
+                top = _pressed ? Color.FromArgb(226, 234, 246) : (_hot ? Color.FromArgb(245, 249, 255) : Color.FromArgb(255, 255, 255));
+                bottom = _pressed ? Color.FromArgb(214, 226, 244) : (_hot ? Color.FromArgb(235, 244, 255) : Color.FromArgb(248, 251, 255));
                 fg = Theme.Ink;
-                borderColor = Color.FromArgb(200, 212, 230);
+                borderColor = Color.FromArgb(205, 217, 235);
             }
 
-            using (SolidBrush b = new SolidBrush(bg))
-                e.Graphics.FillRectangle(b, r);
+            using (GraphicsPath path = UiShapes.RoundedRect(r, Radius))
+            using (LinearGradientBrush brush = new LinearGradientBrush(r, top, bottom, LinearGradientMode.Vertical))
+            {
+                e.Graphics.FillPath(brush, path);
+                if (borderColor != Color.Transparent)
+                {
+                    using (Pen border = new Pen(borderColor, 1f))
+                        e.Graphics.DrawPath(border, path);
+                }
+            }
 
-            if (borderColor != Color.Transparent)
-                using (Pen p = new Pen(borderColor, 1f))
-                    e.Graphics.DrawRectangle(p, 0, 0, r.Width - 1, r.Height - 1);
+            if (Large && !Primary && Enabled)
+            {
+                Rectangle accent = new Rectangle(1, 12, 4, Math.Max(12, Height - 24));
+                using (GraphicsPath accentPath = UiShapes.RoundedRect(accent, 2))
+                using (LinearGradientBrush accentBrush = new LinearGradientBrush(accent, Theme.Blue, Theme.Blue2, LinearGradientMode.Vertical))
+                    e.Graphics.FillPath(accentBrush, accentPath);
+            }
+
+            if (Focused && ShowFocusCues)
+            {
+                Rectangle focus = new Rectangle(3, 3, Width - 7, Height - 7);
+                using (GraphicsPath focusPath = UiShapes.RoundedRect(focus, Radius - 3))
+                using (Pen focusPen = new Pen(Color.FromArgb(120, Theme.Blue), 1f))
+                    e.Graphics.DrawPath(focusPen, focusPath);
+            }
 
             DrawCaption(e.Graphics, r, fg);
         }
@@ -961,18 +1053,18 @@ public class GlassForm : Form
                 sf.Trimming = StringTrimming.EllipsisCharacter;
                 sf.Alignment = TextAlign == ContentAlignment.MiddleLeft ? StringAlignment.Near : StringAlignment.Center;
                 sf.LineAlignment = StringAlignment.Center;
-                int pad = Large ? 18 : 10;
+                int pad = Large ? 20 : 12;
                 RectangleF tr = new RectangleF(r.X + pad, r.Y + 2, r.Width - pad * 2, r.Height - 4);
 
                 if (lines.Length > 1)
                 {
-                    Color subColor = Primary ? Color.FromArgb(200, 220, 255) : Theme.Muted;
-                    float y = r.Y + (r.Height - 40) / 2f;
+                    Color subColor = Primary ? Color.FromArgb(218, 232, 255) : Theme.Muted;
+                    float y = r.Y + (r.Height - 42) / 2f;
                     using (SolidBrush tb = new SolidBrush(fg))
                     using (SolidBrush sb = new SolidBrush(subColor))
                     {
                         g.DrawString(lines[0], Theme.ButtonTitleFont, tb, new RectangleF(tr.X, y, tr.Width, 22), sf);
-                        g.DrawString(lines[1], Theme.ButtonSubFont, sb, new RectangleF(tr.X, y + 23, tr.Width, 17), sf);
+                        g.DrawString(lines[1], Theme.ButtonSubFont, sb, new RectangleF(tr.X, y + 24, tr.Width, 18), sf);
                     }
                 }
                 else
@@ -1009,19 +1101,19 @@ internal sealed class MainForm : GlassForm
         root.ColumnCount = 2;
         root.RowCount = 1;
         root.BackColor = Color.Transparent;
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330f));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 344f));
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         Controls.Add(root);
 
         GlassPanel sidebar = new GlassPanel();
         sidebar.Dock = DockStyle.Fill;
-        sidebar.Padding = new Padding(18);
-        sidebar.Margin = Padding.Empty;
+        sidebar.Padding = new Padding(20);
+        sidebar.Margin = new Padding(0, 0, 14, 0);
         root.Controls.Add(sidebar, 0, 0);
 
         contentPanel = new GlassPanel();
         contentPanel.Dock = DockStyle.Fill;
-        contentPanel.Padding = new Padding(24);
+        contentPanel.Padding = new Padding(28);
         contentPanel.Margin = Padding.Empty;
         root.Controls.Add(contentPanel, 1, 0);
 
@@ -1029,28 +1121,34 @@ internal sealed class MainForm : GlassForm
         sidebarLayout.Dock = DockStyle.Fill;
         sidebarLayout.BackColor = Color.Transparent;
         sidebarLayout.ColumnCount = 1;
-        sidebarLayout.RowCount = 4;
+        sidebarLayout.RowCount = 5;
         sidebarLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        sidebarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         sidebarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebar.Controls.Add(sidebarLayout);
 
+        Label eyebrow = Theme.Label("MEDCARE · SANATORIUM", new Font("Segoe UI Semibold", 8.7f, FontStyle.Bold), Theme.Blue);
+        eyebrow.Margin = new Padding(4, 2, 4, 8);
+        sidebarLayout.Controls.Add(eyebrow, 0, 0);
+
         Label title = Theme.Label("Система здравоохранения", Theme.TitleFont, Theme.Ink);
-        title.Margin = new Padding(4, 2, 4, 8);
-        sidebarLayout.Controls.Add(title, 0, 0);
+        title.Margin = new Padding(4, 0, 4, 8);
+        title.MaximumSize = new Size(292, 0);
+        sidebarLayout.Controls.Add(title, 0, 1);
 
         Label subtitle = Theme.Label("Санаторные путевки, пенсионеры, отчеты и сервис данных", Theme.BaseFont, Theme.Muted);
-        subtitle.Margin = new Padding(4, 0, 4, 18);
-        subtitle.MaximumSize = new Size(280, 0);
-        sidebarLayout.Controls.Add(subtitle, 0, 1);
+        subtitle.Margin = new Padding(4, 0, 4, 20);
+        subtitle.MaximumSize = new Size(292, 0);
+        sidebarLayout.Controls.Add(subtitle, 0, 2);
 
         Panel navHost = new Panel();
         navHost.Dock = DockStyle.Fill;
         navHost.AutoScroll = true;
         navHost.BackColor = Color.Transparent;
-        sidebarLayout.Controls.Add(navHost, 0, 2);
+        sidebarLayout.Controls.Add(navHost, 0, 3);
 
         navLayout = new TableLayoutPanel();
         navLayout.Dock = DockStyle.Top;
@@ -1071,7 +1169,7 @@ internal sealed class MainForm : GlassForm
         sidebarActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         sidebarActions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         sidebarActions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        sidebarLayout.Controls.Add(sidebarActions, 0, 3);
+        sidebarLayout.Controls.Add(sidebarActions, 0, 4);
 
         Button theme = new GlassButton();
         theme.Text = Theme.Dark ? "Светлая тема" : "Темная тема";
@@ -1109,12 +1207,13 @@ internal sealed class MainForm : GlassForm
         sectionTitle.Margin = new Padding(0, 0, 0, 6);
         homeLayout.Controls.Add(sectionTitle, 0, 0);
 
-        sectionHint = Theme.Label("Выберите раздел из левого меню для работы с пенсионерами, путевками и санаториями.", Theme.BaseFont, Theme.Muted);
+        sectionHint = Theme.Label("Современная рабочая область: быстрый доступ к пенсионерам, путевкам, санаториям и отчетности без лишних действий.", Theme.BaseFont, Theme.Muted);
         sectionHint.Margin = new Padding(0, 0, 0, 10);
         sectionHint.MaximumSize = new Size(760, 0);
         homeLayout.Controls.Add(sectionHint, 0, 1);
 
         stats = Theme.Label("", Theme.StatsFont, Theme.Blue);
+        stats.Tag = "accent";
         stats.Margin = new Padding(0, 0, 0, 16);
         homeLayout.Controls.Add(stats, 0, 2);
 
